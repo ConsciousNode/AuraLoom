@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  AURALOOM v0.3 — ConsciousNode SoftWorks
+  AURALOOM v0.4 — ConsciousNode SoftWorks
   Weave sound on a loom: pitch threads run across, time runs along, brightness is loudness.
   Paint notes, plucks, drums and noise, then play the picture as a loop.
 
@@ -24,6 +24,9 @@
   itself back out as text (round-trip tested: tone layer identical to within 2 cells). New score
   syntax: erase, 9.5s off-grid steps, A4q quarter-tones, hat size=, FM tone age=. '#' is a comment
   only at line start or after a space, so C#5 works.
+  v0.4 (Kham's lens): Stretch ×0.05–×64 in time with pitch untouched (loops 0.5–120 s, linear
+  resampling, undoable); Listen ½ ¼ ⅛ with pitch unchanged; BPM changes on painted/woven work
+  re-weave from the threads instead of stretching pixels.
 -->
 <html lang="en">
 <head>
@@ -112,6 +115,7 @@ details.panel[open] summary::before{content:'▾ '}
     <div class="row">
       <button id="play" class="play" title="Play / stop the loop (Space)">▶ Play</button>
       <button id="mode" title="Clean: in-tune oscillators. Ghost: Griffin-Lim, the way AuraGraph tiles play back">Clean</button>
+      <span class="g"><span class="lab">Listen</span><select id="listen" title="Slow listening: play the loop slower without changing its pitch (the loom stays as it is)"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="0.125">⅛×</option></select></span>
       <span class="g"><span class="lab">BPM</span><input id="bpm" type="number" min="40" max="240" value="104"></span>
       <span class="g"><span class="lab">Bars</span><select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select></span>
       <span class="g"><span class="lab">Vol</span><input id="vol" type="range" min="0" max="100" value="75"></span>
@@ -170,6 +174,8 @@ details.panel[open] summary::before{content:'▾ '}
     <label class="file" title="Read any picture as sound: top = high, bright = loud">🖼 Picture<input id="imgIn" type="file" accept="image/*"></label>
     <label class="file" title="Load an AuraGraph tile (or a Paint-a-Tile PNG) with its real pitch axis">◫ AuraGraph tile<input id="tileIn" type="file" accept="image/png,image/*"></label>
     <button id="playOrig" disabled title="Play the imported recording for comparison">▶ Original</button>
+    <span class="g"><span class="lab">Stretch ×</span><input id="stretchK" type="number" min="0.05" max="64" step="0.25" value="4" title="Widen (above 1) or pinch (below 1) the loom in time. Pitch never moves. Loop limits: 0.5 s to 120 s"><button id="stretchGo" title="Apply the stretch (undoable)">⇔</button></span>
+    <span id="lenInfo" class="val" style="min-width:8em"></span>
     <span style="flex:1"></span>
     <button id="saveWav" title="One pass of the loop, reverb tail ringing out at the end">⤓ WAV</button>
     <button id="saveLoop" title="Exactly one loop long, tail folded over the start: loops seamlessly anywhere">⤓ Loop WAV</button>
@@ -222,12 +228,15 @@ details.panel[open] summary::before{content:'▾ '}
   </ul>
   <h3>Scores (text)</h3>
   <p>Open <b>✎ Score</b> to write music as text and <b>Weave</b> it, or press <b>⇡ Write score</b> to turn what's on the loom into text: the last woven score plus every stroke you've painted since (erasing included). Edit it, weave it back, or share it as a link. Imported recordings and pictures can't become a score, because a score holds threads, not pictures.</p>
+  <h3>Stretch and slow listening</h3>
+  <p><b>Stretch ×</b> widens (above 1) or pinches (below 1) the whole loom in time. Pitch never moves, so it's a lens for looking at a sound's shape in slow motion: the rivers of its harmonics, the valleys between them, how the energy pours in at an attack and drains away. Painted threads are redrawn sharp at the new tempo; imported pictures and recordings are resampled, and past ×4 that fills in between the columns rather than adding detail. Loops can run from 0.5 s to 120 s. <b>Undo</b> takes it back.</p>
+  <p><b>Listen</b> plays the loop at ½, ¼ or ⅛ speed with the pitch unchanged, without touching the loom. Changing <b>BPM</b> on painted work re-weaves it from its threads, so nothing blurs.</p>
   <h3>Taking things out</h3>
   <p><b>WAV</b> is one pass of the loop with the Space reverb ringing out at the end. <b>Loop WAV</b> is exactly one loop long with that tail already folded over the start, so it repeats without a seam in any player, editor or game engine. <b>PNG</b> is the loom as you see it. <b>Tile</b> is an AuraGraph-format tile any crew member can read. <b>Project</b> saves everything to reopen later.</p>
   <h3>Keys</h3>
   <p><kbd>Space</kbd> play/stop · <kbd>1</kbd>–<kbd>7</kbd> threads · <kbd>[</kbd> <kbd>]</kbd> size · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>G</kbd> Clean/Ghost</p>
   <p>Everything runs on this device. Nothing is uploaded.</p>
-  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.3 · ConsciousNode SoftWorks · named by Kehai, built by Kehai Interim · the playable half of AuraGraph.</p>
+  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.4 · ConsciousNode SoftWorks · named by Kehai, built by Kehai Interim · the playable half of AuraGraph.</p>
 </div></div>
 
 <script>
@@ -308,19 +317,25 @@ const cv = $('cv'), ctx = cv.getContext('2d');
 const say = t => { $('msg').textContent = t; };
 const levelOf = v => v > 0.001 ? Math.pow(10, (v - 1) * DBR / 20) : 0;     // 0..1 picture level → linear amplitude
 const vOfAmp = a => 1 + 20 * Math.log10(Math.max(a, 1e-9)) / DBR;
-const stepCols = () => cols / (bars * 16);
+const totalSteps = () => secs * bpm / 15;
+const stepCols = () => cols / totalSteps();
 const loopLen = () => Math.round(secs * SR);   // exact loop length in samples, so exports stay in sync with a DAW's tempo
 
-function layout(newBpm, newBars, how) {             // how: 'stretch' (tempo change) | 'keep' (bar change) | 'new'
+let freeSecs = null;                                 // set when Stretch gives the loop a length of its own (not bars × tempo)
+function stretchArr(A, C, C2) {                      // resample along time only, linearly; pitch rows never move
+  const out = new Float32Array(NR * C2), k = C2 > 1 ? (C - 1) / (C2 - 1) : 0;
+  for (let r = 0; r < NR; r++) { const o = r * C, q = r * C2;
+    for (let c = 0; c < C2; c++) { const x = c * k, i = Math.min(C - 2, Math.floor(x)), t = x - i; out[q + c] = C < 2 ? A[o] : A[o + i] * (1 - t) + A[o + i + 1] * t; } }
+  return out;
+}
+function layout(newBpm, newBars, how, forceSecs) {  // how: 'stretch' (resample in time) | 'keep' (crop/extend) | 'new'
   const oT = tone, oN = noise, oC = cols;
-  bpm = newBpm; bars = newBars; secs = bars * 4 * 60 / bpm;
+  bpm = newBpm; bars = newBars; freeSecs = forceSecs || null; secs = freeSecs || bars * 4 * 60 / bpm;
   cols = Math.round(secs * SR / HOP);
-  tone = new Float32Array(NR * cols); noise = new Float32Array(NR * cols);
-  if (oT && how !== 'new') for (let r = 0; r < NR; r++) for (let c = 0; c < cols; c++) {
-    const sc = how === 'stretch' ? Math.min(oC - 1, Math.floor(c * oC / cols)) : c;
-    if (sc < oC) { tone[r * cols + c] = oT[r * oC + sc]; noise[r * cols + c] = oN[r * oC + sc]; }
-  }
-  cv.width = cols; cv.height = NR; img = null; drawAxis(); draw(); dirty = true;
+  if (oT && how === 'stretch') { tone = stretchArr(oT, oC, cols); noise = stretchArr(oN, oC, cols); }
+  else { tone = new Float32Array(NR * cols); noise = new Float32Array(NR * cols);
+    if (oT && how === 'keep') for (let r = 0; r < NR; r++) for (let c = 0; c < Math.min(cols, oC); c++) { tone[r * cols + c] = oT[r * oC + c]; noise[r * cols + c] = oN[r * oC + c]; } }
+  cv.width = cols; cv.height = NR; img = null; bgCol = null; drawAxis(); draw(); dirty = true;
 }
 
 // ================= key / scale =================
@@ -350,7 +365,7 @@ function buildBg() {
     else { bgRow[r * 3] = g; bgRow[r * 3 + 1] = g; bgRow[r * 3 + 2] = g + 3; }
   }
   bgCol = new Uint8Array(cols); const sc = stepCols();
-  for (let k = 0; k < bars * 16; k++) { const c = Math.min(cols - 1, Math.round(k * sc)); bgCol[c] = k % 16 === 0 ? 34 : k % 4 === 0 ? 18 : 8; }
+  for (let k = 0; k < totalSteps(); k++) { const c = Math.round(k * sc); if (c < cols) bgCol[c] = k % 16 === 0 ? 34 : k % 4 === 0 ? 18 : 8; }
 }
 function draw() {
   if (!bgRow || !bgCol || bgCol.length !== cols) buildBg();
@@ -464,19 +479,20 @@ cv.addEventListener('pointermove', e => {
 const endDraw = () => { if (drawing) { finishStroke(); markStale(); } drawing = false; };
 cv.addEventListener('pointerup', endDraw); cv.addEventListener('pointercancel', endDraw);
 cv.addEventListener('pointerleave', () => { $('hover').style.display = 'none'; });
-function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols, ev: evlog.slice(), base: baseLines.slice(), imp: imported }); if (undoStack.length > 40) undoStack.shift(); }
+function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols, secs, freeSecs, bpm, bars, ev: evlog.slice(), base: baseLines.slice(), imp: imported }); if (undoStack.length > 40) undoStack.shift(); }
 
 // ================= renderers =================
 // Clean: tone rows → phase-continuous oscillators; noise rows → random-phase spectral noise.
-function renderClean() {
-  const L = loopLen(), out = new Float32Array(Math.max(L, cols * HOP));
+function renderClean(T, N, C, L) {
+  T = T || tone; N = N || noise; C = C || cols; L = L || loopLen();
+  const out = new Float32Array(Math.max(L, C * HOP));
   for (let r = 0; r < NR; r++) {
     const f = rowFreq(r); if (f > SR * 0.47) continue;
-    let any = false; for (let c = 0; c < cols; c++) if (tone[r * cols + c] > 0.001) { any = true; break; }
+    let any = false; for (let c = 0; c < C; c++) if (T[r * C + c] > 0.001) { any = true; break; }
     if (!any) continue;
     const w = 2 * Math.PI * f / SR; let ph = Math.random() * 2 * Math.PI;
-    for (let c = 0; c < cols; c++) {
-      const a0 = levelOf(tone[r * cols + c]), a1 = c + 1 < cols ? levelOf(tone[r * cols + c + 1]) : 0;
+    for (let c = 0; c < C; c++) {
+      const a0 = levelOf(T[r * C + c]), a1 = c + 1 < C ? levelOf(T[r * C + c + 1]) : 0;
       const base = c * HOP;
       if (a0 === 0 && a1 === 0) { ph = (ph + w * HOP) % (2 * Math.PI); continue; }
       const da = (a1 - a0) / HOP;
@@ -485,14 +501,14 @@ function renderClean() {
     }
   }
   // noise layer
-  let anyN = false; for (let i = 0; i < noise.length; i++) if (noise[i] > 0.001) { anyN = true; break; }
+  let anyN = false; for (let i = 0; i < N.length; i++) if (N[i] > 0.001) { anyN = true; break; }
   if (anyN) {
     const nz = new Float32Array(L + NFFT), re = new Float64Array(NFFT), im = new Float64Array(NFFT);
-    for (let c = 0; c < cols; c++) {
+    for (let c = 0; c < C; c++) {
       let live = false;
       for (let k = 0; k < NBIN; k++) {
         const rf = binRow[k]; let m = 0;
-        if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, v = noise[r0 * cols + c] * (1 - t) + noise[(r0 + 1) * cols + c] * t; m = levelOf(v); }
+        if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, v = N[r0 * C + c] * (1 - t) + N[(r0 + 1) * C + c] * t; m = levelOf(v); }
         const a = Math.random() * 2 * Math.PI; re[k] = m * Math.cos(a) * 28; im[k] = m * Math.sin(a) * 28; if (m) live = true;
       }
       if (!live) continue;
@@ -510,21 +526,22 @@ function renderClean() {
   return res.slice();
 }
 // Ghost: the whole picture through Griffin-Lim, as AuraGraph tiles play back.
-async function renderGhost(iters, onProgress) {
-  const mag = new Float32Array(cols * NBIN);
-  for (let c = 0; c < cols; c++) for (let k = 0; k < NBIN; k++) {
+async function renderGhost(iters, onProgress, T, N, C, L) {
+  T = T || tone; N = N || noise; C = C || cols; L = L || loopLen();
+  const mag = new Float32Array(C * NBIN);
+  for (let c = 0; c < C; c++) for (let k = 0; k < NBIN; k++) {
     const rf = binRow[k]; if (rf < 0 || rf >= NR - 1) continue;
-    const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * cols + c, i1 = i0 + cols;
-    const v = Math.max(tone[i0], noise[i0]) * (1 - t) + Math.max(tone[i1], noise[i1]) * t;
+    const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * C + c, i1 = i0 + C;
+    const v = Math.max(T[i0], N[i0]) * (1 - t) + Math.max(T[i1], N[i1]) * t;
     mag[c * NBIN + k] = levelOf(v);
   }
-  const len = (cols - 1) * HOP + NFFT, out = new Float32Array(len), norm = new Float32Array(len);
-  for (let c = 0; c < cols; c++) for (let i = 0; i < NFFT; i++) norm[c * HOP + i] += win[i] * win[i];
-  const phRe = new Float32Array(cols * NBIN), phIm = new Float32Array(cols * NBIN);
+  const len = (C - 1) * HOP + NFFT, out = new Float32Array(len), norm = new Float32Array(len);
+  for (let c = 0; c < C; c++) for (let i = 0; i < NFFT; i++) norm[c * HOP + i] += win[i] * win[i];
+  const phRe = new Float32Array(C * NBIN), phIm = new Float32Array(C * NBIN);
   for (let i = 0; i < phRe.length; i++) { const a = Math.random() * 2 * Math.PI; phRe[i] = Math.cos(a); phIm[i] = Math.sin(a); }
   const re = new Float64Array(NFFT), im = new Float64Array(NFFT);
   const istft = () => { out.fill(0);
-    for (let c = 0; c < cols; c++) {
+    for (let c = 0; c < C; c++) {
       for (let k = 0; k < NBIN; k++) { const m = mag[c * NBIN + k]; re[k] = m * phRe[c * NBIN + k]; im[k] = m * phIm[c * NBIN + k]; }
       for (let k = 1; k < NFFT / 2; k++) { re[NFFT - k] = re[k]; im[NFFT - k] = -im[k]; }
       fft(re, im, true);
@@ -533,7 +550,7 @@ async function renderGhost(iters, onProgress) {
     for (let i = 0; i < len; i++) out[i] /= Math.max(norm[i], 0.5); };
   for (let it = 0; it < iters; it++) {
     istft();
-    for (let c = 0; c < cols; c++) {
+    for (let c = 0; c < C; c++) {
       for (let i = 0; i < NFFT; i++) { re[i] = out[c * HOP + i] * win[i]; im[i] = 0; }
       fft(re, im, false);
       for (let k = 0; k < NBIN; k++) { const r = Math.hypot(re[k], im[k]) || 1; phRe[c * NBIN + k] = re[k] / r; phIm[c * NBIN + k] = im[k] / r; }
@@ -541,7 +558,7 @@ async function renderGhost(iters, onProgress) {
     if (it % 3 === 2) { onProgress && onProgress(it + 1, iters); await new Promise(r => setTimeout(r)); }
   }
   istft();
-  const L = loopLen(), res = new Float32Array(L), off = (NFFT - HOP) / 2;   // centre the frames on their columns
+  const res = new Float32Array(L), off = (NFFT - HOP) / 2;   // centre the frames on their columns
   let peak = 0; for (let i = 0; i < L; i++) { res[i] = out[i + off] || 0; peak = Math.max(peak, Math.abs(res[i])); }
   if (peak > 0) for (let i = 0; i < L; i++) res[i] *= 0.85 / peak;
   const fade = 64; for (let i = 0; i < fade; i++) { res[i] *= i / fade; res[L - 1 - i] *= i / fade; }
@@ -593,12 +610,22 @@ function startAt(samples, offset) {
   srcNode = n; t0 = a.currentTime - offset; loopDur = dur;
 }
 let loopDur = 1;
+let listen = 1, slowCache = null;
+async function playRender() {                       // what to play: the loop, or a slowed copy with pitch unchanged
+  const base = await render(); if (listen === 1 || !base) return base;
+  if (slowCache && slowCache.base === base && slowCache.listen === listen) return slowCache.s;
+  const C2 = Math.round(cols / listen), L2 = Math.round(loopLen() / listen), T2 = stretchArr(tone, cols, C2), N2 = stretchArr(noise, cols, C2);
+  $('busy').style.display = 'inline';
+  let s = mode === 'clean' ? renderClean(T2, N2, C2, L2) : await renderGhost(24, (n, of) => { $('busy').textContent = '● weaving slow ghost ' + n + '/' + of + '… '; }, T2, N2, C2, L2);
+  $('busy').style.display = 'none'; $('busy').textContent = '● weaving… ';
+  s = crunchIt(s); slowCache = { base, listen, s }; return s;
+}
 async function play() {
   const a = audio(); await a.resume();
-  const s = await render(); if (!silentCheck(s)) { say('The loom is empty. Paint something first.'); return; }
+  const s = await playRender(); if (!silentCheck(s)) { say('The loom is empty. Paint something first.'); return; }
   playing = true; startAt(s, 0); $('play').textContent = '■ Stop'; $('play').classList.add('live');
   $('head').style.display = 'block'; tick();
-  say((mode === 'clean' ? 'Clean' : 'Ghost') + ' · ' + bars + ' bar' + (bars > 1 ? 's' : '') + ' at ' + bpm + ' BPM · woven in ' + (lastRenderMs / 1000).toFixed(2) + ' s. Keep painting; changes play on the fly.');
+  say((mode === 'clean' ? 'Clean' : 'Ghost') + ' · ' + (freeSecs ? secs.toFixed(1) + ' s (free length)' : bars + ' bar' + (bars > 1 ? 's' : '') + ' at ' + bpm + ' BPM') + (listen !== 1 ? ' · listening at ' + ({0.5: '½', 0.25: '¼', 0.125: '⅛'}[listen]) + ' speed, same pitch' : '') + ' · woven in ' + (lastRenderMs / 1000).toFixed(2) + ' s. Keep painting; changes play on the fly.');
 }
 function stop() { playing = false; if (srcNode) { try { srcNode.stop(); } catch (e) {} srcNode = null; } cancelAnimationFrame(raf); $('head').style.display = 'none'; $('play').textContent = '▶ Play'; $('play').classList.remove('live'); }
 function tick() { if (!playing) return; const t = ((actx.currentTime - t0) % loopDur) / loopDur; $('head').style.left = (t * 100) + '%'; raf = requestAnimationFrame(tick); }
@@ -607,7 +634,7 @@ let swapTimer = 0;
 function touched() {
   dirty = true; if (!playing) return;
   clearTimeout(swapTimer);
-  swapTimer = setTimeout(async () => { const s = await render(); if (playing && s) startAt(s, actx.currentTime - t0); }, mode === 'clean' ? 140 : 600);
+  swapTimer = setTimeout(async () => { const frac = ((actx.currentTime - t0) % loopDur) / loopDur; const s = await playRender(); if (playing && s) startAt(s, frac * s.length / SR); }, mode === 'clean' ? 140 : 600);
 }
 
 // ================= imports =================
@@ -695,13 +722,13 @@ const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s +=
 const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
 const q8 = L => Uint8Array.from(L, v => Math.round(v * 255));
 $('saveProj').onclick = () => {
-  const p = { app: 'AuraLoom', v: 1, bpm, bars, cols, rows: NR, root: +$('root').value, scale: $('scale').value, timbre: $('timbre').value, mode, space: +$('space').value, tone: b64(q8(tone)), noise: b64(q8(noise)) };
+  const p = { app: 'AuraLoom', v: 1, bpm, bars, cols, freeSecs, rows: NR, root: +$('root').value, scale: $('scale').value, timbre: $('timbre').value, mode, space: +$('space').value, tone: b64(q8(tone)), noise: b64(q8(noise)) };
   download(new Blob([JSON.stringify(p)], { type: 'application/json' }), 'auraloom-' + stamp() + '.auraloom.json'); say('Project saved.');
 };
 $('projIn').onchange = async e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
   try { const p = JSON.parse(await file.text()); if (p.app !== 'AuraLoom' || p.rows !== NR) throw new Error('not an AuraLoom project');
     stop(); $('bpm').value = p.bpm; $('bars').value = p.bars; $('root').value = p.root; $('scale').value = p.scale; $('timbre').value = p.timbre || 'string'; $('space').value = p.space ?? 22;
-    layout(p.bpm, p.bars, 'new'); if (p.cols !== cols) throw new Error('size mismatch');
+    layout(p.bpm, p.bars, 'new', p.freeSecs || null); if (p.cols !== cols) throw new Error('size mismatch'); showLen();
     const T = unb64(p.tone), N = unb64(p.noise); for (let i = 0; i < tone.length; i++) { tone[i] = T[i] / 255; noise[i] = N[i] / 255; }
     bgRow = null; setMode(p.mode || 'clean'); drawAxis(); draw(); setMix(); undoStack.length = 0; say('Project “' + file.name + '” loaded.');
   } catch (err) { say('Could not load that project: ' + err.message); } };
@@ -717,9 +744,32 @@ for (const id of ['loud', 'size', 'ring']) { const f = () => { $(id + 'V').textC
 $('vol').oninput = setMix; $('space').oninput = setMix; $('crunch').onchange = () => { touched(); say('Crunch ' + $('crunch').value + ': ' + ($('crunch').value === '0' ? 'clean 16-bit.' : (16 - $('crunch').value / 10).toFixed(1) + '-bit DAC.')); };
 NOTE.forEach((n, i) => { const o = document.createElement('option'); o.value = i; o.textContent = n; if (i === 9) o.selected = true; $('root').appendChild(o); });
 $('root').onchange = $('scale').onchange = () => { bgRow = null; drawAxis(); draw(); };
-$('bpm').onchange = () => { const v = Math.max(40, Math.min(240, Math.round(+$('bpm').value) || bpm)); $('bpm').value = v; if (v === bpm) return; const was = playing; stop(); layout(v, bars, 'stretch'); if (was) play(); };
-$('bars').onchange = () => { const was = playing; stop(); layout(bpm, +$('bars').value, 'keep'); if (was) play(); };
-$('undo').onclick = () => { const u = undoStack.pop(); if (!u) return; if (u.cols !== cols) { say('Undo history was cleared by the tempo or length change.'); return; } tone = u.t; noise = u.n; evlog = u.ev || []; baseLines = u.base || []; imported = !!u.imp; draw(); touched(); markStale(); };
+$('bpm').onchange = () => { const v = Math.max(40, Math.min(240, Math.round(+$('bpm').value) || bpm)); $('bpm').value = v; if (v === bpm && !freeSecs) return; const was = playing; stop();
+  if (!imported && !freeSecs && (evlog.length || baseLines.length)) {       // threads are events: redraw them at the new tempo, sharp
+    const txt = writeScore().replace(/^bpm \d+$/m, 'bpm ' + v); weaveScore(txt); $('score').value = txt; showWeave({ woven: '—', errs: [], bpm: v, bars }, 'Re-woven at the new tempo');
+    say('Re-woven at ' + v + ' BPM from its threads: every note redrawn, nothing stretched.');
+  } else { pushUndo(); layout(v, bars, 'stretch'); say('Stretched to ' + v + ' BPM' + (imported ? ' (imported material is a picture, so it was resampled in time; pitch is untouched).' : '.')); }
+  showLen(); if (was) play(); };
+$('bars').onchange = () => { const was = playing; stop(); pushUndo(); layout(bpm, +$('bars').value, freeSecs ? 'stretch' : 'keep'); showLen(); if (was) play(); };
+// ---- Stretch: a lens for looking at (and hearing) a sound's shape in slow motion
+function showLen() { const el = $('lenInfo'); if (el) el.textContent = freeSecs ? 'free length ' + secs.toFixed(2) + ' s' : bars + ' bar' + (bars > 1 ? 's' : '') + ' · ' + secs.toFixed(2) + ' s'; }
+$('stretchGo').onclick = () => {
+  let k = +$('stretchK').value; if (!(k > 0)) { say('Stretch needs a number, like 4 (slower, wider) or 0.5 (faster, narrower).'); return; }
+  const newSecs = Math.max(0.5, Math.min(120, secs * k)); k = newSecs / secs; if (Math.abs(k - 1) < 1e-3) { say('That stretch would hit the loop limits (0.5 s to 120 s).'); return; }
+  const was = playing; stop();
+  if (!imported && !freeSecs && (evlog.length || baseLines.length) && Math.round(bpm / k) >= 40 && Math.round(bpm / k) <= 240) {
+    const v = Math.round(bpm / k); $('bpm').value = v; $('bpm').onchange(); say('Painted threads are events, so Stretch ×' + (+k.toFixed(3)) + ' re-wove them at ' + v + ' BPM: sharp at any scale.');
+  } else {
+    pushUndo(); layout(bpm, bars, 'stretch', newSecs); evlog = []; baseLines = []; imported = true; markStale();
+    const ms = HOP / SR * 1000 / k;
+    say('Stretched ×' + (+k.toFixed(3)) + ' to ' + newSecs.toFixed(2) + ' s, pitch untouched. ' + (k > 4 ? 'Past ×4 the loom fills in between the columns it had: perfect for slow shapes, but no new fast detail. ' : '') + (k < 1 ? 'Pinched: each loom column now holds ' + (+(1 / k).toFixed(2)) + ' of the old ones, so events that were closer together than ' + ms.toFixed(0) + ' ms now merge. ' : '') + 'The beat grid stays at ' + bpm + ' BPM, so it no longer lines up with the music. Undo to go back.');
+  }
+  showLen(); if (was) play();
+};
+$('listen').onchange = async () => { listen = +$('listen').value; if (playing) { const frac = ((actx.currentTime - t0) % loopDur) / loopDur; const s = await playRender(); if (playing && s) startAt(s, frac * s.length / SR); } say(listen === 1 ? 'Listening at full speed.' : 'Listening at ' + ({0.5: '½', 0.25: '¼', 0.125: '⅛'}[listen]) + ' speed with the pitch unchanged. The loom itself is untouched.'); };
+$('undo').onclick = () => { const u = undoStack.pop(); if (!u) return;
+  if (u.cols !== cols) { stop(); bpm = u.bpm; bars = u.bars; secs = u.secs; freeSecs = u.freeSecs; cols = u.cols; $('bpm').value = bpm; $('bars').value = bars; cv.width = cols; img = null; bgCol = null; drawAxis(); showLen(); }
+  tone = u.t; noise = u.n; evlog = u.ev || []; baseLines = u.base || []; imported = !!u.imp; draw(); touched(); markStale(); };
 $('clear').onclick = () => { pushUndo(); tone.fill(0); noise.fill(0); evlog = []; baseLines = []; imported = false; markStale(); draw(); touched(); say('Cleared. (Undo brings it back.)'); };
 $('helpBtn').onclick = () => $('help-ov').classList.add('on');
 $('help-ov').onclick = e => { if (e.target.id === 'help-ov') $('help-ov').classList.remove('on'); };
@@ -898,7 +948,7 @@ function weaveScore(text) {
   errs.sort((x, y) => parseInt(x) - parseInt(y));
   for (let i = body.length - 1; i >= 0; i--) if (/^# AuraLoom score, written from the loom/.test(body[i]) || /^# Note: this loom also held imported|^# threads, so only what was painted after the import/.test(body[i])) body.splice(i, 1);
   while (body.length && !body[0].trim()) body.shift(); while (body.length && !body[body.length - 1].trim()) body.pop();
-  baseLines = body; evlog = []; imported = false; stale = false;
+  baseLines = body; evlog = []; imported = false; stale = false; showLen();
   return { woven, errs, bpm: BP, bars: B };
 }
 function pushUndoSafe() { if (tone) pushUndo(); }
@@ -958,6 +1008,7 @@ $('scoreGuide').onclick = () => { const g = $('guideText'); g.textContent = GUID
 // ================= start: a score from the link, or the starter loop =================
 layout(104, 2, 'new');
 (function boot() {
+  setTimeout(showLen);
   const m = /[#&]score=([^&]+)/.exec(location.hash);
   if (m) { try { const text = fromB64url(m[1]); $('score').value = text; $('scorePanel').open = true;
       const res = weaveScore(text); showWeave(res, 'Woven from the link'); say('This loom was woven from a score someone shared. Press ▶ (or Space) to hear it.'); return; }
@@ -967,7 +1018,7 @@ layout(104, 2, 'new');
 })();
 // exports the headless renderer (tools/weave.py) calls
 async function wavB64(seamless) { const blob = await loopWav(!!seamless); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
-window.__loom = { writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+window.__loom = { playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
 </script>
 </body>
 </html>
