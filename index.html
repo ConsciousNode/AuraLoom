@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  AURALOOM v0.1 — ConsciousNode SoftWorks
+  AURALOOM v0.2 — ConsciousNode SoftWorks
   Weave sound on a loom: pitch threads run across, time runs along, brightness is loudness.
   Paint notes, plucks, drums and noise, then play the picture as a loop.
 
@@ -15,6 +15,9 @@
 
   Name and idea: Kham Kizer · built by Kehai Interim · 2026-10-29
   Engine lineage: AuraGraph toys/paint-a-tile.html (FFT, Griffin-Lim, audio→tile).
+  v0.2 (2026-10-29): Genesis FM voices (2-op FM as Bessel sidebands with moving index, after
+  Synth Radio's YM2612 / fm_keys voices), Crunch (console DAC bits), and Scores: music as text,
+  share links (#score=), and tools/weave.py so the crew can compose without a screen.
 -->
 <html lang="en">
 <head>
@@ -63,6 +66,14 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
 #busy{display:none;color:rgb(var(--warm));font-weight:700}
 .legend{display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--soft);margin-top:8px;flex-wrap:wrap}
 .sw{display:inline-block;width:22px;height:8px;border-radius:3px;vertical-align:middle;margin-right:5px}
+details.panel summary{cursor:pointer;list-style:none;font-size:14px}
+details.panel summary::-webkit-details-marker{display:none}
+details.panel summary::before{content:'▸ ';color:rgb(var(--accent))}
+details.panel[open] summary::before{content:'▾ '}
+#score{width:100%;min-height:260px;margin-top:10px;background:#0c0c0f;color:#e4e4e7;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical;user-select:text;-webkit-user-select:text}
+#scoreMsg{font:12px ui-monospace,Menlo,Consolas,monospace;margin-top:8px;color:var(--soft);white-space:pre-wrap}
+#scoreMsg .err{color:#fca5a5}
+#guideText{background:#0c0c0f;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:var(--soft);white-space:pre-wrap;user-select:text;-webkit-user-select:text;margin-top:8px}
 #help-ov{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:20}
 #help-ov.on{display:flex}
 #help{background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:660px;width:94%;max-height:86vh;overflow:auto;padding:18px 22px;color:var(--soft);font-size:13.5px;line-height:1.62;user-select:text;-webkit-user-select:text}
@@ -99,6 +110,7 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
       <span class="g"><span class="lab">Bars</span><select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select></span>
       <span class="g"><span class="lab">Vol</span><input id="vol" type="range" min="0" max="100" value="75"></span>
       <span class="g"><span class="lab">Space</span><input id="space" type="range" min="0" max="100" value="22" title="Reverb"></span>
+      <span class="g"><span class="lab">Crunch</span><input id="crunch" type="range" min="0" max="100" value="0" title="Console DAC: fewer bits, more grit (0 = clean, 100 = 6-bit)"></span>
       <button id="helpBtn" title="How it works">?</button>
     </div>
   </div>
@@ -119,6 +131,7 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
     <select id="timbre" title="Overtone recipe for Tone and Pluck">
       <option value="pure">Pure (sine)</option><option value="flute">Flute</option><option value="string" selected>String</option>
       <option value="reed">Reed</option><option value="organ">Organ</option><option value="bell">Bell</option>
+      <optgroup label="Genesis FM"><option value="fmLead">FM Lead</option><option value="fmBass">FM Bass</option><option value="fmKeys">FM Keys</option><option value="fmBrass">FM Brass</option><option value="fmBell">FM Bell</option><option value="fmClang">FM Clang</option></optgroup>
     </select>
     <span class="lab">Key</span>
     <select id="root"></select>
@@ -160,6 +173,19 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
   </div>
   <div id="status"><span id="busy">● weaving… </span><span id="msg"></span></div>
 </div>
+<details class="panel" id="scorePanel">
+  <summary><b>✎ Score</b> <span class="tag">· write music as text and weave it onto the loom (made for the crew, fine for anyone who'd rather type)</span></summary>
+  <textarea id="score" spellcheck="false"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button id="weave" class="play" style="padding:7px 16px">⇣ Weave score</button>
+    <button id="example">Example</button>
+    <button id="copyScore">⧉ Copy</button>
+    <button id="share" title="A link that opens AuraLoom with this score already woven">🔗 Share link</button>
+    <button id="scoreGuide">Format ?</button>
+  </div>
+  <div id="scoreMsg"></div>
+  <pre id="guideText" style="display:none"></pre>
+</details>
 <div class="foot">AuraLoom · ConsciousNode SoftWorks · siblings: <a href="https://consciousnode.github.io/chromatrack/">Chromatrack</a> · <a href="https://consciousnode.github.io/Synth-Radio/">Synth Radio</a> · <a href="https://consciousnode.github.io/Speaker-Box-Magnum/">Speaker Box Magnum</a> · <a href="https://consciousnode.github.io/AuraGraph/">AuraGraph</a></div>
 
 <div id="help-ov"><div id="help">
@@ -174,7 +200,7 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
     <li><b>Erase</b>: unpick anything under the brush. <b>Size</b> sets its width.</li>
   </ul>
   <h3>Voice, key and scale</h3>
-  <p><b>Voice</b> is the overtone recipe for Tone and Pluck: Pure is a single thread, String and Reed stack harmonics above it (you'll see the ladder), Bell uses the out-of-tune partials of a real bell. <b>Key</b> and <b>Scale</b> snap your notes to the scale; the in-key rows are lit and the root is cyan. <b>Free</b> turns snapping off.</p>
+  <p><b>Voice</b> is the overtone recipe for Tone and Pluck: Pure is a single thread, String and Reed stack harmonics above it (you'll see the ladder), Bell uses the out-of-tune partials of a real bell. The <b>Genesis FM</b> voices are two-operator FM, the trick behind the Mega Drive's sound chip: the brightness moves over the life of each note (a bass that starts with a bark, brass that swells), and you can watch the sidebands open and close on the loom. <b>Crunch</b> rounds the output to fewer bits, like a console DAC. <b>Key</b> and <b>Scale</b> snap your notes to the scale; the in-key rows are lit and the root is cyan. <b>Free</b> turns snapping off.</p>
   <h3>Clean and Ghost</h3>
   <ul>
     <li><b>Clean</b>: every tone row is a smooth oscillator, so painted notes are crisp and in tune. Noise threads become real noise.</li>
@@ -191,7 +217,7 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
   <h3>Keys</h3>
   <p><kbd>Space</kbd> play/stop · <kbd>1</kbd>–<kbd>7</kbd> threads · <kbd>[</kbd> <kbd>]</kbd> size · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>G</kbd> Clean/Ghost</p>
   <p>Everything runs on this device. Nothing is uploaded.</p>
-  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.1 · ConsciousNode SoftWorks · named by Kham, built by Kehai Interim · the playable half of AuraGraph.</p>
+  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.2 · ConsciousNode SoftWorks · named by Kehai, built by Kehai Interim · the playable half of AuraGraph.</p>
 </div></div>
 
 <script>
@@ -212,6 +238,33 @@ const TIMBRES = {                                                       // [freq
   organ:  [[1,1],[2,.8],[3,.55],[4,.5],[6,.3],[8,.3]],
   bell:   [[1,1],[2.76,.6],[5.4,.4],[8.93,.25],[13.34,.12]]
 };
+// Genesis FM voices (ideas from Synth Radio's YM2612 and fm_keys voices). Two-operator FM:
+// sin(wc·t + I·sin(wm·t)) has partials at fc + n·fm with amplitude Jn(I). The index I moves
+// over the note's life, so the picture brightens or darkens exactly as the sound does.
+//   R = modulator:carrier ratio · I goes from i0 to i1 with time constant tau (s)
+const FM = {
+  fmLead:  { R: 1,   i0: 2.4, i1: 1.5, tau: 0.30 },
+  fmBass:  { R: 1,   i0: 3.4, i1: 0.7, tau: 0.08 },
+  fmKeys:  { R: 2,   i0: 1.8, i1: 0.25, tau: 0.15 },
+  fmBrass: { R: 1,   i0: 0.3, i1: 2.3, tau: 0.07 },
+  fmBell:  { R: 3.5, i0: 3.0, i1: 0.4, tau: 0.6 },
+  fmClang: { R: 1.41, i0: 2.6, i1: 0.9, tau: 0.25 }
+};
+function besselJ(n, x) {                       // integer order, series form (fine for x ≤ ~6)
+  const m = Math.abs(n); let sum = 0, term = Math.pow(x / 2, m); for (let k = 1; k <= m; k++) term /= k;
+  for (let k = 0; k < 30; k++) { sum += term; term *= -(x * x / 4) / ((k + 1) * (k + 1 + m)); if (Math.abs(term) < 1e-9) break; }
+  return n < 0 && m % 2 ? -sum : sum;
+}
+// partials for a voice at time t (seconds into the note): [ratio, amplitude, order]
+function partialsAt(name, t) {
+  const fm = FM[name];
+  if (!fm) return (TIMBRES[name] || TIMBRES.pure).map(([r, a], h) => [r, a, h]);
+  const I = fm.i1 + (fm.i0 - fm.i1) * Math.exp(-(t || 0) / fm.tau), N = Math.ceil(I) + 3, map = new Map();
+  for (let n = -N; n <= N; n++) { const ratio = Math.abs(1 + n * fm.R); if (ratio < 0.02) continue;
+    const key = ratio.toFixed(3), a = Math.abs(besselJ(n, I)); map.set(key, [ratio, (map.get(key)?.[1] || 0) + a, Math.abs(n)]); }
+  const list = [...map.values()].filter(p => p[1] > 0.004), top = Math.max(...list.map(p => p[1]));
+  return list.map(p => [p[0], p[1] / top, p[2], true]);
+}
 const AG_NB = 160, AG_FMIN = 30, AG_FMAX = 11000;                         // AuraGraph tile format
 const agBandOfFreq = f => Math.log(f / AG_FMIN) / Math.log(AG_FMAX / AG_FMIN) * AG_NB;
 
@@ -314,40 +367,41 @@ function drawAxis() {
 function put(L, r, c, v) { r = Math.round(r); c = Math.round(c); if (r < 0 || r >= NR || c < 0 || c >= cols || v <= 0) return; const i = r * cols + c; if (v > L[i]) L[i] = Math.min(1, v); }
 function rub(r, c, rad) { for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) if (dr * dr + dc * dc <= rad * rad) { const rr = Math.round(r + dr), cc = Math.round(c + dc); if (rr >= 0 && rr < NR && cc >= 0 && cc < cols) { tone[rr * cols + cc] = 0; noise[rr * cols + cc] = 0; } } }
 const loudV = () => 0.35 + 0.65 * (+$('loud').value / 100);
-function partials() { return TIMBRES[$('timbre').value] || TIMBRES.pure; }
-function stampNote(row, c, v) {               // one column of a held note with its overtones
-  for (const [ratio, a] of partials()) { const r = row + 24 * Math.log2(ratio); if (r >= NR) break; put(tone, r, c, v + 20 * Math.log10(a) / DBR); }
+const voiceName = () => $('timbre').value;
+function stampNote(row, c, v, t, voice) {     // one column of a held note with its overtones; t = seconds since the note began
+  for (const [ratio, a] of partialsAt(voice || voiceName(), t || 0)) { const r = row + 24 * Math.log2(ratio); if (r >= NR || r < 0) continue; put(tone, r, c, v + 20 * Math.log10(a) / DBR); }
 }
-function pluck(row, c0) {
-  const ring = Math.max(2, Math.round(+$('ring').value * stepCols())), v = loudV(), P = partials();
+function pluck(row, c0, o) {
+  o = o || {};
+  const ringSteps = o.ring != null ? o.ring : +$('ring').value, ring = Math.max(2, Math.round(ringSteps * stepCols())), v = o.v != null ? o.v : loudV(), voice = o.voice || voiceName();
   for (let dc = 0; dc < ring; dc++) { const t = dc / ring;
-    P.forEach(([ratio, a], h) => { const r = row + 24 * Math.log2(ratio); if (r >= NR) return;
-      const fall = t * 0.55 * (1 + 0.35 * h);                   // upper partials die first, like a real string
+    partialsAt(voice, dc * HOP / SR).forEach(([ratio, a, h, isFM]) => { const r = row + 24 * Math.log2(ratio); if (r >= NR || r < 0) return;
+      const fall = t * 0.55 * (1 + (isFM ? 0.08 : 0.35) * h);   // upper partials die first, like a real string (FM: the index does it)
       const atk = dc === 0 ? 0.04 : 0;
       put(tone, r, c0 + dc, v + 20 * Math.log10(a) / DBR - fall - atk); }); }
 }
-function kick(c0) {
-  const v = loudV(), n = Math.round(0.22 * SR / HOP);
+function kick(c0, v) {
+  v = v != null ? v : loudV(); const n = Math.round(0.22 * SR / HOP);
   for (let dc = 0; dc < n; dc++) { const f = 46 + 120 * Math.exp(-dc / 2.2); put(tone, rowOfFreq(f), c0 + dc, v - 0.5 * dc / n); put(tone, rowOfFreq(f) + 1, c0 + dc, v - 0.12 - 0.5 * dc / n); }
   for (let r = rowOfFreq(1500); r < rowOfFreq(5000); r++) put(noise, r, c0, v * 0.55);
 }
-function snare(c0) {
-  const v = loudV(), n = Math.round(0.17 * SR / HOP);
+function snare(c0, v) {
+  v = v != null ? v : loudV(); const n = Math.round(0.17 * SR / HOP);
   for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(260)); r < NR; r++) put(noise, r, c0 + dc, (v * 0.93 - 0.6 * dc / n) * (0.85 + 0.15 * Math.random()));
   for (let dc = 0; dc < 4; dc++) { put(tone, rowOfFreq(185), c0 + dc, v - 0.08 - 0.1 * dc); put(tone, rowOfFreq(330), c0 + dc, v - 0.2 - 0.12 * dc); }
 }
-function hat(c0) {
-  const v = loudV(), n = 2 + Math.round(+$('size').value / 3);
+function hat(c0, v, open) {
+  v = v != null ? v : loudV(); const n = open ? Math.round(0.2 * SR / HOP) : 2 + Math.round(+$('size').value / 3);
   for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(5500)); r < NR; r++) put(noise, r, c0 + dc, (v - 0.25 * dc / n) * (0.9 + 0.1 * Math.random()));
 }
 function smear(rf, c) { const v = loudV() * 0.85, rad = +$('size').value * 2;
   for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad / 2; dc <= rad / 2; dc++) { const q = (dr * dr) / (rad * rad) + (dc * dc * 4) / (rad * rad); if (q <= 1) put(noise, rf + dr, c + dc, v * (1 - 0.7 * q) * (0.7 + 0.3 * Math.random())); } }
 const qc = c => quant ? Math.round(c / stepCols()) * stepCols() : c;
 
-let drawing = false, last = null, lockRow = null, lastStrike = -1e9;
+let drawing = false, last = null, strokeC0 = 0, lastStrike = -1e9;
 function toLoom(e) { const rc = cv.getBoundingClientRect(); return { c: Math.max(0, Math.min(cols - 1, (e.clientX - rc.left) / rc.width * cols)), r: (1 - (e.clientY - rc.top) / rc.height) * NR, x: e.clientX - rc.left, y: e.clientY - rc.top }; }
 function strokeAt(p, first) {
-  if (brush === 'tone') { const row = snapRow(p.r); stampNote(row, p.c, loudV()); }
+  if (brush === 'tone') { const row = snapRow(p.r); stampNote(row, p.c, loudV(), Math.max(0, p.c - strokeC0) * HOP / SR); }
   else if (brush === 'pluck') { const c = qc(p.c), gap = quant ? stepCols() * 0.99 : stepCols() * 0.5;
     if (first || Math.abs(c - lastStrike) >= gap) { pluck(snapRow(p.r), Math.round(c)); lastStrike = c; } }
   else if (brush === 'kick' || brush === 'snare' || brush === 'hat') { const c = qc(p.c);
@@ -356,7 +410,7 @@ function strokeAt(p, first) {
   else if (brush === 'erase') rub(p.r, p.c, +$('size').value * 1.5);
 }
 cv.addEventListener('pointerdown', e => {
-  e.preventDefault(); cv.setPointerCapture(e.pointerId); pushUndo(); drawing = true; last = toLoom(e); strokeAt(last, true); draw(); touched();
+  e.preventDefault(); cv.setPointerCapture(e.pointerId); pushUndo(); drawing = true; last = toLoom(e); strokeC0 = last.c; strokeAt(last, true); draw(); touched();
 });
 cv.addEventListener('pointermove', e => {
   const p = toLoom(e), h = $('hover');
@@ -466,13 +520,19 @@ async function render() {
     let s;
     if (mode === 'clean') { await new Promise(r => setTimeout(r)); s = renderClean(); }
     else s = await renderGhost(32, (n, of) => { $('busy').textContent = '● weaving ghost ' + n + '/' + of + '… '; });
-    rendered = s; $('busy').style.display = 'none'; $('busy').textContent = '● weaving… ';
+    s = crunchIt(s); rendered = s; $('busy').style.display = 'none'; $('busy').textContent = '● weaving… ';
     lastRenderMs = performance.now() - t0;
     return s;
   })();
   const s = await rendering; rendering = null; return s;
 }
 let lastRenderMs = 0;
+function crunchIt(s) {                         // a console-style DAC: round every sample to fewer bits
+  const k = +$('crunch').value; if (!k) return s;
+  const q = Math.pow(2, (16 - k / 10) - 1), o = new Float32Array(s.length);
+  for (let i = 0; i < s.length; i++) o[i] = Math.round(s[i] * q) / q;
+  return o;
+}
 
 // ================= playback =================
 let actx = null, master = null, wet = null, dry = null, srcNode = null, t0 = 0, raf = 0, playing = false;
@@ -567,24 +627,27 @@ function wavBlob(chs, rate) { const n = chs[0].length, nc = chs.length, buf = ne
   v.setUint32(24, rate, true); v.setUint32(28, rate * 2 * nc, true); v.setUint16(32, 2 * nc, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2 * nc, true);
   for (let i = 0, o = 44; i < n; i++) for (let ch = 0; ch < nc; ch++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, chs[ch][i])) * 32767, true);
   return new Blob([buf], { type: 'audio/wav' }); }
-$('saveWav').onclick = async () => {
-  const s = await render(); if (!silentCheck(s)) { say('Nothing to save yet.'); return; }
+async function loopWav() {
+  const s = await render(); if (!silentCheck(s)) return null;
   const sp = +$('space').value / 100, tail = sp > 0 ? 1.6 : 0, n = s.length + Math.round(tail * SR);
   const off = new OfflineAudioContext(2, n, SR), b = off.createBuffer(1, s.length, SR); b.copyToChannel(s, 0);
   const src = off.createBufferSource(); src.buffer = b;
   const g = off.createGain(), dG = off.createGain(), wG = off.createGain(), cv2 = off.createConvolver(); cv2.buffer = makeIR(off, 2.4);
   g.gain.value = +$('vol').value / 100; dG.gain.value = 1 - 0.45 * sp; wG.gain.value = 0.55 * sp;
   src.connect(g); g.connect(dG); g.connect(cv2); cv2.connect(wG); dG.connect(off.destination); wG.connect(off.destination); src.start();
-  const out = await off.startRendering(); download(wavBlob([out.getChannelData(0), out.getChannelData(1)], SR), 'auraloom-' + stamp() + '.wav'); say('WAV saved: one pass of the loop, with the Space tail.');
-};
+  const out = await off.startRendering(); return wavBlob([out.getChannelData(0), out.getChannelData(1)], SR);
+}
+$('saveWav').onclick = async () => { const b = await loopWav(); if (!b) { say('Nothing to save yet.'); return; } download(b, 'auraloom-' + stamp() + '.wav'); say('WAV saved: one pass of the loop, with the Space tail.'); };
 $('savePng').onclick = () => cv.toBlob(b => download(b, 'auraloom-' + stamp() + '.png'));
-$('saveTile').onclick = () => {
+function tileCanvas() {
   const oc = document.createElement('canvas'); oc.width = cols; oc.height = AG_NB; const o = oc.getContext('2d'), im = o.createImageData(cols, AG_NB), d = im.data;
   for (let b = 0; b < AG_NB; b++) { const f = AG_FMIN * Math.pow(AG_FMAX / AG_FMIN, (b + 0.5) / AG_NB), rf = rowOfFreq(f), y = AG_NB - 1 - b;
     for (let c = 0; c < cols; c++) { let v = 0;
       if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * cols + c; v = Math.max(tone[i0], noise[i0]) * (1 - t) + Math.max(tone[i0 + cols], noise[i0 + cols]) * t; }
       const k = Math.max(0, Math.min(255, Math.round(v * 255))) * 3, p = (y * cols + c) * 4; d[p] = LUT[k]; d[p + 1] = LUT[k + 1]; d[p + 2] = LUT[k + 2]; d[p + 3] = 255; } }
-  o.putImageData(im, 0, 0); oc.toBlob(b => download(b, 'auraloom-tile-' + stamp() + '.png')); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
+  o.putImageData(im, 0, 0); return oc;
+}
+$('saveTile').onclick = () => { tileCanvas().toBlob(b => download(b, 'auraloom-tile-' + stamp() + '.png')); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
 };
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
@@ -609,7 +672,7 @@ document.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => selectB
 function selectBrush(name) { brush = name; document.querySelectorAll('[data-brush]').forEach(x => x.classList.toggle('on', x.dataset.brush === name)); }
 $('quant').onclick = () => { quant = !quant; $('quant').classList.toggle('on', quant); };
 for (const id of ['loud', 'size', 'ring']) { const f = () => { $(id + 'V').textContent = $(id).value; }; $(id).oninput = f; f(); }
-$('vol').oninput = setMix; $('space').oninput = setMix;
+$('vol').oninput = setMix; $('space').oninput = setMix; $('crunch').onchange = () => { touched(); say('Crunch ' + $('crunch').value + ': ' + ($('crunch').value === '0' ? 'clean 16-bit.' : (16 - $('crunch').value / 10).toFixed(1) + '-bit DAC.')); };
 NOTE.forEach((n, i) => { const o = document.createElement('option'); o.value = i; o.textContent = n; if (i === 9) o.selected = true; $('root').appendChild(o); });
 $('root').onchange = $('scale').onchange = () => { bgRow = null; drawAxis(); draw(); };
 $('bpm').onchange = () => { const v = Math.max(40, Math.min(240, Math.round(+$('bpm').value) || bpm)); $('bpm').value = v; if (v === bpm) return; const was = playing; stop(); layout(v, bars, 'stretch'); if (was) play(); };
@@ -620,7 +683,7 @@ $('helpBtn').onclick = () => $('help-ov').classList.add('on');
 $('help-ov').onclick = e => { if (e.target.id === 'help-ov') $('help-ov').classList.remove('on'); };
 const KEYB = ['tone', 'pluck', 'kick', 'snare', 'hat', 'noise', 'erase'];
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') $('help-ov').classList.remove('on');
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('undo').click(); }
   else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
@@ -629,25 +692,191 @@ document.addEventListener('keydown', e => {
   else if (e.key.toLowerCase() === 'g') $('mode').click();
 });
 
-// ================= a starter loop, so the first ▶ makes music =================
+// ================= scores: music as text (for the crew) =================
+const EXAMPLE = `# AuraLoom score: the starter loop
+bpm 104
+bars 2
+key A minor
+voice string
+space 22
+
+# drums. positions are 16th-note steps counted from 1,
+# or bar.beat.sub (2.1.3 = bar 2, beat 1, third 16th)
+1,9,17,23,25   kick
+5,13,21,29     snare
+1-32/4         hat  80
+3-32/4         hat  55
+
+# step  pluck  note  ring  loud
+1   pluck A3  3
+4   pluck C4  3
+7   pluck E4  3
+9   pluck A4  3
+12  pluck E4  3
+15  pluck C4  3
+17  pluck D4  3
+20  pluck F4  3
+23  pluck A4  3
+25  pluck F4  3
+28  pluck C4  3
+31  pluck E4  3
+
+# step  tone  note  length  loud  options
+1   tone A2  14  42  voice=flute
+17  tone F2  14  42  voice=flute
+`;
+const GUIDE = `AURALOOM SCORE FORMAT (v1). One instruction per line. # starts a comment.
+
+SETTINGS (any order, all optional)
+  bpm 104              tempo, 40-240
+  bars 2               1, 2, 4 or 8
+  key A minor          root + scale: chromatic major minor pentMaj pentMin dorian blues free
+  voice string         default voice: pure flute string reed organ bell
+                       fmLead fmBass fmKeys fmBrass fmBell fmClang (Genesis FM)
+  ring 4               default pluck ring, in 16th steps
+  space 22             reverb 0-100      crunch 0      console grit 0-100
+  mode clean           clean | ghost
+
+EVENTS:  <where>  <thread>  [note]  [length]  [loud]  [key=value ...]
+  where   5            a 16th-note step, counted from 1
+          2.3.1        bar.beat.sub
+          1,5,9        a list           1-32/2   a range with a stride
+  thread  tone pluck kick snare hat openhat noise
+  note    A4  C#5  Bb3                  (middle C = C4, A4 = 440 Hz)
+          A3+C4+E4                      a chord
+          A4>E5                         a glide (tone only)
+  length  in 16th steps (tone: how long it holds, pluck: how long it rings,
+          noise: how long it hisses). Defaults: tone 1, pluck = ring, noise 2
+  loud    0-100 (default 80)
+  options voice=bell  loud=60  len=4  width=3 (noise height in quarter-tones)
+
+EXAMPLES
+  1-32/4   hat 70
+  1,9,17   kick
+  5,13     snare 90
+  1        pluck A3+C4+E4 6 70 voice=fmKeys
+  9        tone  E4>G4 8 60 voice=fmBrass
+  17       noise C7 4 40 width=6
+
+The score replaces whatever is on the loom. Notes are placed exactly as written
+(no key snapping); the key only lights the rows. Share links carry the score in
+the address, so a crew member can hand Kham a link that plays.`;
+const LOUD = l => 0.35 + 0.65 * Math.max(0, Math.min(100, l)) / 100;
+function parseNote(tok) {
+  const m = /^([A-Ga-g])([#♯b♭]?)(-?\d)$/.exec(tok); if (!m) return null;
+  const pc = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }[m[1].toLowerCase()] + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] === 'b' || m[2] === '♭' ? -1 : 0);
+  return (+m[3] + 1) * 12 + pc;
+}
+function parseWhere(tok, maxStep) {
+  const out = [];
+  for (const part of tok.split(',')) {
+    let m;
+    if ((m = /^(\d+)\.(\d+)(?:\.(\d+))?$/.exec(part))) out.push((+m[1] - 1) * 16 + (+m[2] - 1) * 4 + (m[3] ? +m[3] : 1));
+    else if ((m = /^(\d+)-(\d+)(?:\/(\d+))?$/.exec(part))) { const a = +m[1], b = +m[2], k = m[3] ? +m[3] : 1; if (k < 1 || b < a) return null; for (let x = a; x <= b; x += k) out.push(x); }
+    else if (/^\d+$/.test(part)) out.push(+part);
+    else return null;
+  }
+  return out.filter(x => x >= 1 && x <= maxStep);
+}
+const THREADS = ['tone', 'pluck', 'kick', 'snare', 'hat', 'openhat', 'noise'];
+function weaveScore(text) {
+  const lines = text.split(/\r?\n/), errs = [], set = {}, events = [];
+  lines.forEach((raw, li) => {
+    const line = raw.replace(/#.*/, '').trim(); if (!line) return;
+    const tk = line.split(/\s+/), head = tk[0].toLowerCase(), n = li + 1;
+    if (head === 'bpm') { const v = +tk[1]; if (v >= 40 && v <= 240) set.bpm = Math.round(v); else errs.push(n + ': bpm must be 40-240'); return; }
+    if (head === 'bars') { const v = +tk[1]; if ([1, 2, 4, 8].includes(v)) set.bars = v; else errs.push(n + ': bars must be 1, 2, 4 or 8'); return; }
+    if (head === 'key') { const r = /^([A-Ga-g])([#♯b♭]?)$/.exec(tk[1] || ''); const sc = tk[2] || 'major';
+      if (!r || !(sc in SCALES)) { errs.push(n + ': key looks like "key A minor"'); return; }
+      set.root = (({ c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }[r[1].toLowerCase()] + (r[2] === '#' || r[2] === '♯' ? 1 : r[2] ? -1 : 0)) + 12) % 12; set.scale = sc; return; }
+    if (head === 'voice') { if (TIMBRES[tk[1]] || FM[tk[1]]) set.voice = tk[1]; else errs.push(n + ': unknown voice "' + tk[1] + '"'); return; }
+    if (head === 'ring' || head === 'space' || head === 'crunch') { const v = +tk[1]; if (isFinite(v)) set[head] = v; else errs.push(n + ': ' + head + ' needs a number'); return; }
+    if (head === 'mode') { if (tk[1] === 'clean' || tk[1] === 'ghost') set.mode = tk[1]; else errs.push(n + ': mode is clean or ghost'); return; }
+    const thread = (tk[1] || '').toLowerCase();
+    if (!THREADS.includes(thread)) { errs.push(n + ': expected "<where> <thread> ...", e.g. "5 snare"'); return; }
+    const opts = {}, pos = [];
+    for (const t of tk.slice(2)) { const kv = /^(\w+)=(.+)$/.exec(t); if (kv) opts[kv[1].toLowerCase()] = kv[2]; else pos.push(t); }
+    events.push({ n, where: tk[0], thread, pos, opts });
+  });
+  const B = set.bars || bars, BP = set.bpm || bpm;
+  stop(); $('bpm').value = BP; $('bars').value = B;
+  if (set.root != null) $('root').value = set.root; if (set.scale) $('scale').value = set.scale;
+  if (set.voice) $('timbre').value = set.voice; if (set.ring != null) { $('ring').value = Math.max(1, Math.min(16, set.ring)); $('ringV').textContent = $('ring').value; }
+  if (set.space != null) $('space').value = set.space; if (set.crunch != null) $('crunch').value = set.crunch;
+  pushUndoSafe(); layout(BP, B, 'new'); bgRow = null; drawAxis(); setMix();
+  const sc = stepCols(), colOf = st => Math.round((st - 1) * sc); let woven = 0;
+  for (const ev of events) {
+    const steps = parseWhere(ev.where, B * 16);
+    if (!steps) { errs.push(ev.n + ': can\'t read the position "' + ev.where + '"'); continue; }
+    if (!steps.length) { errs.push(ev.n + ': position is outside the ' + B + '-bar loop'); continue; }
+    const voice = ev.opts.voice || $('timbre').value;
+    if (!TIMBRES[voice] && !FM[voice]) { errs.push(ev.n + ': unknown voice "' + voice + '"'); continue; }
+    const nums = ev.pos.filter(t => /^\d+(\.\d+)?$/.test(t)).map(Number), words = ev.pos.filter(t => !/^\d+(\.\d+)?$/.test(t));
+    const isPitched = ev.thread === 'tone' || ev.thread === 'pluck' || ev.thread === 'noise';
+    let len = ev.opts.len != null ? +ev.opts.len : isPitched ? nums[0] : undefined;
+    let loud = ev.opts.loud != null ? +ev.opts.loud : isPitched ? nums[1] : nums[0];
+    const v = LOUD(loud != null && isFinite(loud) ? loud : 80);
+    let notes = null, glide = null;
+    if (isPitched && words.length) {
+      const w = words[0];
+      if (w.includes('>')) { const [a, b] = w.split('>').map(parseNote); if (a == null || b == null) { errs.push(ev.n + ': can\'t read the glide "' + w + '"'); continue; } glide = [a, b]; notes = [a]; }
+      else { notes = w.split('+').map(parseNote); if (notes.some(x => x == null)) { errs.push(ev.n + ': can\'t read the note "' + w + '" (try A4, C#5, Bb3)'); continue; } }
+    }
+    if ((ev.thread === 'tone' || ev.thread === 'pluck') && !notes) { errs.push(ev.n + ': ' + ev.thread + ' needs a note, e.g. "' + ev.where + ' ' + ev.thread + ' A4"'); continue; }
+    for (const st of steps) {
+      const c0 = colOf(st);
+      if (ev.thread === 'kick') kick(c0, v);
+      else if (ev.thread === 'snare') snare(c0, v);
+      else if (ev.thread === 'hat') hat(c0, v, false);
+      else if (ev.thread === 'openhat') hat(c0, v, true);
+      else if (ev.thread === 'pluck') for (const m of notes) pluck(rowOfMidi(m), c0, { ring: len || +$('ring').value, v, voice });
+      else if (ev.thread === 'tone') {
+        const L = Math.max(1, Math.round((len || 1) * sc) - 1);
+        for (let dc = 0; dc < L; dc++) for (let k = 0; k < notes.length; k++) {
+          const m = glide ? glide[0] + (glide[1] - glide[0]) * dc / Math.max(1, L - 1) : notes[k];
+          stampNote(rowOfMidi(m), c0 + dc, v, dc * HOP / SR, voice); }
+      } else if (ev.thread === 'noise') {
+        const centre = notes ? rowOfMidi(notes[0]) : rowOfMidi(84), w = ev.opts.width != null ? +ev.opts.width : 4, L = Math.max(1, Math.round((len || 2) * sc));
+        for (let dc = 0; dc < L; dc++) for (let dr = -w; dr <= w; dr++) put(noise, centre + dr, c0 + dc, (v - 0.3 * Math.abs(dr) / Math.max(1, w)) * (0.75 + 0.25 * Math.random()));
+      }
+      woven++;
+    }
+  }
+  if (set.mode) setMode(set.mode);
+  draw(); touched();
+  errs.sort((x, y) => parseInt(x) - parseInt(y));
+  return { woven, errs, bpm: BP, bars: B };
+}
+function pushUndoSafe() { if (tone) pushUndo(); }
+function showWeave(res, label) {
+  const box = $('scoreMsg');
+  box.innerHTML = '';
+  const ok = document.createElement('div'); ok.textContent = '✓ ' + (label || 'Woven') + ': ' + res.woven + ' threads, ' + res.bars + ' bar' + (res.bars > 1 ? 's' : '') + ' at ' + res.bpm + ' BPM.' + (res.errs.length ? ' ' + res.errs.length + ' line' + (res.errs.length > 1 ? 's' : '') + ' skipped:' : ''); box.appendChild(ok);
+  for (const e of res.errs) { const d = document.createElement('div'); d.className = 'err'; d.textContent = '  line ' + e; box.appendChild(d); }
+}
+const toB64url = str => { const u = new TextEncoder().encode(str); let b = ''; for (const x of u) b += String.fromCharCode(x); return btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const fromB64url = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0))); };
+$('weave').onclick = () => { const res = weaveScore($('score').value); showWeave(res); say('Score woven. ▶ to hear it.'); };
+$('example').onclick = () => { $('score').value = EXAMPLE; };
+$('copyScore').onclick = async () => { try { await navigator.clipboard.writeText($('score').value); $('scoreMsg').textContent = 'Score copied.'; } catch (e) { $('score').select(); $('scoreMsg').textContent = 'Select-all done; copy with Ctrl+C.'; } };
+$('share').onclick = async () => { const url = location.href.split('#')[0] + '#score=' + toB64url($('score').value);
+  try { await navigator.clipboard.writeText(url); $('scoreMsg').textContent = 'Link copied (' + url.length + ' characters). Anyone who opens it gets this score already woven.'; }
+  catch (e) { $('scoreMsg').textContent = url; } history.replaceState(null, '', url); };
+$('scoreGuide').onclick = () => { const g = $('guideText'); g.textContent = GUIDE; g.style.display = g.style.display === 'none' ? 'block' : 'none'; };
+
+// ================= start: a score from the link, or the starter loop =================
 layout(104, 2, 'new');
-(function starter() {
-  const sc = stepCols(), at = s => Math.round(s * sc), keepB = brush, keepT = $('timbre').value, keepR = $('ring').value;
-  for (let s = 0; s < 32; s += 8) kick(at(s));
-  kick(at(22));
-  for (let s = 4; s < 32; s += 8) snare(at(s));
-  for (let s = 0; s < 32; s += 2) { $('size').value = s % 4 === 2 ? 2 : 1; hat(at(s)); }
-  $('size').value = 3;
-  $('timbre').value = 'string'; $('ring').value = 3;
-  const A = rowOfMidi(57), arp = [[0, 0], [3, 3], [6, 7], [8, 12], [11, 7], [14, 3], [16, 5], [19, 8], [22, 12], [24, 8], [27, 3], [30, 7]];
-  for (const [s, semi] of arp) pluck(A + semi * 2, at(s));
-  $('timbre').value = 'flute';
-  for (let c = at(0); c < at(14); c++) stampNote(rowOfMidi(45), c, 0.62);
-  for (let c = at(16); c < at(30); c++) stampNote(rowOfMidi(41), c, 0.62);
-  $('timbre').value = keepT; $('ring').value = keepR; $('ringV').textContent = keepR; brush = keepB; draw();
+(function boot() {
+  const m = /[#&]score=([^&]+)/.exec(location.hash);
+  if (m) { try { const text = fromB64url(m[1]); $('score').value = text; $('scorePanel').open = true;
+      const res = weaveScore(text); showWeave(res, 'Woven from the link'); say('This loom was woven from a score someone shared. Press ▶ (or Space) to hear it.'); return; }
+    catch (e) { say('That link\'s score could not be read: ' + e.message); } }
+  $('score').value = EXAMPLE; weaveScore(EXAMPLE); undoStack.length = 0;
+  say('A little loop in A minor is already woven (its score is under ✎ Score). Press ▶ (or Space), then paint your own threads while it plays.');
 })();
-say('A little loop in A minor is already woven. Press ▶ (or Space), then paint your own threads while it plays.');
-window.__loom = { get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+// exports the headless renderer (tools/weave.py) calls
+async function wavB64() { const blob = await loopWav(); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
+window.__loom = { weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
 </script>
 </body>
 </html>

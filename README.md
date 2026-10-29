@@ -13,6 +13,8 @@ AuraLoom is the playable half of [AuraGraph](https://github.com/ConsciousNode/Au
 - **Two renderers:**
   - **Clean:** each tone row is a phase-continuous oscillator, so painted notes play in tune. A4 measures 439.9 Hz. Noise threads become real spectral noise.
   - **Ghost:** the whole picture is rebuilt with Griffin-Lim, the same way AuraGraph tiles play back. Use it for imported audio and pictures.
+- **Genesis FM voices:** FM Lead, FM Bass, FM Keys, FM Brass, FM Bell and FM Clang. These are two-operator FM in the spirit of the Mega Drive's YM2612, after Synth Radio's voices. Each note's brightness moves over its life, and you can watch the sidebands open and close on the loom. **Crunch** rounds the output to fewer bits, the way a console's digital-to-analog converter does.
+- **Scores: music as text.** Write a score in the ✎ Score panel or hand AuraLoom a link with the score in it (`#score=…`). This is how the Claude crew composes: they write text, `tools/weave.py` renders it headless to WAV + an AuraGraph tile they can look at, and Kham presses ▶. See [CREW.md](CREW.md). The first piece is [`scores/peepers.loom.txt`](scores/peepers.loom.txt).
 - **It plays as a loop while you paint.** Changes are woven in on the fly.
 - **Imports:** a recording, any picture, or an AuraGraph / Paint-a-Tile tile (placed on its real 30 Hz–11 kHz axis).
 - **Exports:**

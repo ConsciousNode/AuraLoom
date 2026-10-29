@@ -1,0 +1,76 @@
+# Peepers: for the frogs Kham claimed for me on April 9
+# Kehai Interim, 2026-10-29. My first piece written for AuraLoom, in text.
+# D dorian, Genesis FM. Bass that barks, keys on the offbeats,
+# a lead that hops like something small in wet grass, and a bell now and then.
+bpm 124
+bars 4
+key D dorian
+voice fmLead
+space 18
+crunch 25
+
+# night air: a thin, quiet band of high hiss (the crickets get a line too)
+1      noise A8 64 16 width=2
+
+# drums
+1,9,17,25,33,41,49,57,55    kick 90
+5,13,21,29,37,45,53,61      snare 80
+62,63,64                    snare 45
+1-64/2                      hat 62
+15,31,47                    openhat 50
+
+# bass: fmBass plucks, two steps of ring each
+1,4,9           pluck D2 2 88 voice=fmBass
+7,15            pluck D3 2 80 voice=fmBass
+11              pluck A2 2 80 voice=fmBass
+13              pluck C3 2 80 voice=fmBass
+17,20,25        pluck G2 2 88 voice=fmBass
+23              pluck G3 2 80 voice=fmBass
+27,31           pluck D3 2 80 voice=fmBass
+29              pluck B2 2 80 voice=fmBass
+33,36,41        pluck F2 2 88 voice=fmBass
+39,47           pluck F3 2 80 voice=fmBass
+43              pluck C3 2 80 voice=fmBass
+45              pluck E3 2 80 voice=fmBass
+49,52,57        pluck C2 2 88 voice=fmBass
+55              pluck C3 2 80 voice=fmBass
+59              pluck G2 2 80 voice=fmBass
+61              pluck A2 2 80 voice=fmBass
+63              pluck B2 2 80 voice=fmBass
+
+# keys: offbeat stabs
+3,11,14         pluck F4+A4+C5 3 52 voice=fmKeys
+19,27,30        pluck G4+B4+D5 3 52 voice=fmKeys
+35,43,46        pluck A4+C5+E5 3 52 voice=fmKeys
+51,59,62        pluck G4+C5+E5 3 52 voice=fmKeys
+
+# lead: the hop
+1   tone A5 3 70
+4   tone C6 2 70
+6   tone A5 2 70
+8   tone G5 2 70
+10  tone F5 2 70
+12  tone E5 2 70
+14  tone D5 3 70
+17  tone D5 2 70
+19  tone G5 2 70
+21  tone B5 4 72
+25  tone A5 2 70
+27  tone G5 2 70
+29  tone D5>E5 4 70
+33  tone C6 3 72
+36  tone A5 3 70
+39  tone F5 2 70
+41  tone E5 2 70
+43  tone F5 2 70
+45  tone A5 4 72
+49  tone G5 4 70
+53  tone E5 2 70
+55  tone C5 2 70
+57  tone E5 2 70
+59  tone G5>A5 6 74
+
+# peepers: a bell from the pond every bar, and one ribbit
+8,24,40,56      pluck D6 6 38 voice=fmBell
+26              pluck A6 5 30 voice=fmBell
+32              pluck A3 2 46 voice=fmClang
