@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<!--
+  AURALOOM v0.1 — ConsciousNode SoftWorks
+  Weave sound on a loom: pitch threads run across, time runs along, brightness is loudness.
+  Paint notes, plucks, drums and noise, then play the picture as a loop.
+
+  Sibling of Chromatrack, Synth Radio and Speaker Box Magnum (the instruments), and the
+  hands-on half of AuraGraph (which turns audio into tiles for models to read).
+  Two renderers:
+    · Clean — every tone thread is a phase-continuous oscillator, noise threads are
+      random-phase spectral noise. In tune, crisp, fast.
+    · Ghost — the whole picture is rebuilt by Griffin-Lim (1984), the way AuraGraph tiles
+      play back. Smeary and haunted, and the right choice for imported audio and pictures.
+  Single HTML file · zero dependencies · offline · Xinu compliant · MIT.
+
+  Name and idea: Kham Kizer · built by Kehai Interim · 2026-10-29
+  Engine lineage: AuraGraph toys/paint-a-tile.html (FFT, Griffin-Lim, audio→tile).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AuraLoom · weave sound</title>
+<style>
+:root{--bg:#09090b;--panel:#18181b;--cell:#27272a;--line:#3f3f46;--text:#e4e4e7;--soft:#a1a1aa;--dim:#71717a;--accent:6,182,212;--warm:245,125,21}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior-y:none}
+body{display:flex;flex-direction:column;align-items:center;padding:16px 12px 28px;user-select:none;-webkit-user-select:none}
+.panel{width:100%;max-width:1180px;background:rgba(24,24,27,.72);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.05);box-shadow:0 4px 30px rgba(0,0,0,.5);border-radius:18px;padding:16px 18px;margin-bottom:12px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:14px;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:46px;height:46px;border-radius:12px;background:rgb(var(--accent));display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(var(--accent),.4)}
+h1{margin:0;font-size:23px;font-weight:700;letter-spacing:-.025em;color:#fff;text-shadow:0 0 10px rgba(var(--accent),.55)}
+.tag{color:var(--soft);font-size:12.5px;font-weight:500}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.row+.row{margin-top:10px}
+.g{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.lab{font-size:.62rem;font-weight:800;color:var(--dim);text-transform:uppercase;letter-spacing:.12em;margin:0 2px 0 8px}
+.lab:first-child{margin-left:0}
+button,select,label.file{background:#1f1f23;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;line-height:1.2}
+button:hover,label.file:hover,select:hover{border-color:rgba(var(--accent),.7)}
+button.on{background:rgba(var(--accent),.18);border-color:rgb(var(--accent));color:#cffafe;box-shadow:0 0 10px rgba(var(--accent),.25)}
+button.play{background:rgb(8,145,178);border-color:rgb(8,145,178);color:#fff;padding:9px 20px;box-shadow:0 0 15px rgba(var(--accent),.3)}
+button.play:hover{background:rgb(var(--accent))}
+button.play.live{background:rgb(var(--warm));border-color:rgb(var(--warm));box-shadow:0 0 15px rgba(var(--warm),.35)}
+button:disabled{opacity:.4;cursor:default}
+label.file input{display:none}
+input[type=range]{width:96px;accent-color:rgb(var(--accent))}
+input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:6px 8px;font:inherit;font-size:13px}
+.val{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#67e8f9;min-width:2.2em;display:inline-block}
+.brushes button{min-width:62px}
+.brushes button small{display:block;font-size:9.5px;color:var(--dim);font-weight:700;letter-spacing:.06em}
+.brushes button.on small{color:#67e8f9}
+#stage{position:relative;display:flex;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#050507}
+#axis{width:46px;flex:none;position:relative;background:var(--panel);border-right:1px solid var(--line);font:10.5px ui-monospace,Menlo,Consolas,monospace;color:var(--dim)}
+#axis div{position:absolute;right:6px;transform:translateY(-50%);white-space:nowrap}
+#axis div.root{color:#67e8f9;font-weight:700}
+#wrap{position:relative;flex:1;height:min(62vh,580px);touch-action:none}
+#cv{width:100%;height:100%;display:block;cursor:crosshair;image-rendering:pixelated;image-rendering:crisp-edges}
+#head{position:absolute;top:0;bottom:0;width:2px;background:rgb(var(--warm));box-shadow:0 0 8px rgba(var(--warm),.9);display:none;pointer-events:none}
+#hover{position:absolute;pointer-events:none;font:11px ui-monospace,Menlo,Consolas,monospace;background:rgba(9,9,11,.85);border:1px solid var(--line);padding:2px 7px;border-radius:6px;display:none;white-space:nowrap;color:#e4e4e7}
+#status{color:var(--soft);font-size:12.5px;min-height:1.4em;margin-top:9px}
+#busy{display:none;color:rgb(var(--warm));font-weight:700}
+.legend{display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--soft);margin-top:8px;flex-wrap:wrap}
+.sw{display:inline-block;width:22px;height:8px;border-radius:3px;vertical-align:middle;margin-right:5px}
+#help-ov{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:20}
+#help-ov.on{display:flex}
+#help{background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:660px;width:94%;max-height:86vh;overflow:auto;padding:18px 22px;color:var(--soft);font-size:13.5px;line-height:1.62;user-select:text;-webkit-user-select:text}
+#help h2{color:#fff;font-size:17px;margin:0 0 6px}
+#help h3{font-size:.7rem;font-weight:800;color:rgb(var(--accent));text-transform:uppercase;letter-spacing:.1em;margin:16px 0 4px}
+#help b{color:var(--text)}
+#help ul{padding-left:18px;margin:4px 0}
+#help kbd{font:11px ui-monospace,Menlo,monospace;background:#27272a;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--text)}
+.foot{color:var(--dim);font-size:11.5px;text-align:center;margin-top:6px}
+.foot a{color:#67e8f9;text-decoration:none}
+@media (max-width:640px){
+  body{padding:10px 6px 20px}
+  .panel{padding:12px;border-radius:14px}
+  h1{font-size:20px}
+  #wrap{height:52vh}
+  #axis{width:38px}
+  .brushes button{min-width:54px;padding:6px 8px}
+  input[type=range]{width:78px}
+}
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <div class="top">
+    <div class="brand">
+      <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M3 10h18M3 14h18M3 18h18" opacity=".55"/><path d="M6 3v18M12 3v18M18 3v18"/><path d="M6 10l6 4 6-4" stroke-width="2.2"/></svg></div>
+      <div><h1>AuraLoom</h1><div class="tag">Weave sound: pitch runs across, time runs along, brightness is loudness</div></div>
+    </div>
+    <div class="row">
+      <button id="play" class="play" title="Play / stop the loop (Space)">▶ Play</button>
+      <button id="mode" title="Clean: in-tune oscillators. Ghost: Griffin-Lim, the way AuraGraph tiles play back">Clean</button>
+      <span class="g"><span class="lab">BPM</span><input id="bpm" type="number" min="40" max="240" value="104"></span>
+      <span class="g"><span class="lab">Bars</span><select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select></span>
+      <span class="g"><span class="lab">Vol</span><input id="vol" type="range" min="0" max="100" value="75"></span>
+      <span class="g"><span class="lab">Space</span><input id="space" type="range" min="0" max="100" value="22" title="Reverb"></span>
+      <button id="helpBtn" title="How it works">?</button>
+    </div>
+  </div>
+
+  <div class="row brushes" style="margin-top:14px">
+    <span class="lab">Thread</span>
+    <button data-brush="tone" title="A held note. Drag sideways to hold, up/down to glide (1)">Tone<small>HOLD</small></button>
+    <button data-brush="pluck" class="on" title="A struck note that rings and fades. Drag to strum (2)">Pluck<small>STRIKE</small></button>
+    <button data-brush="kick" title="Kick drum (3)">Kick<small>DRUM</small></button>
+    <button data-brush="snare" title="Snare drum (4)">Snare<small>DRUM</small></button>
+    <button data-brush="hat" title="Hi-hat (5)">Hat<small>DRUM</small></button>
+    <button data-brush="noise" title="A soft smear of noise: breath, wind, hiss (6)">Noise<small>WEFT</small></button>
+    <button data-brush="erase" title="Unpick threads (7)">Erase<small>UNPICK</small></button>
+  </div>
+
+  <div class="row">
+    <span class="lab">Voice</span>
+    <select id="timbre" title="Overtone recipe for Tone and Pluck">
+      <option value="pure">Pure (sine)</option><option value="flute">Flute</option><option value="string" selected>String</option>
+      <option value="reed">Reed</option><option value="organ">Organ</option><option value="bell">Bell</option>
+    </select>
+    <span class="lab">Key</span>
+    <select id="root"></select>
+    <select id="scale">
+      <option value="chromatic">Chromatic</option><option value="major">Major</option><option value="minor" selected>Minor</option>
+      <option value="pentMaj">Pentatonic maj</option><option value="pentMin">Pentatonic min</option>
+      <option value="dorian">Dorian</option><option value="blues">Blues</option><option value="free">Free (no snap)</option>
+    </select>
+    <button id="quant" class="on" title="Snap strikes and drums to the 16th-note grid">Grid ⊞</button>
+    <span class="g"><span class="lab">Loud</span><input id="loud" type="range" min="20" max="100" value="80"><span id="loudV" class="val">80</span></span>
+    <span class="g"><span class="lab">Size</span><input id="size" type="range" min="1" max="10" value="3"><span id="sizeV" class="val">3</span></span>
+    <span class="g"><span class="lab">Ring</span><input id="ring" type="range" min="1" max="16" value="4" title="How many 16th-steps a pluck rings for"><span id="ringV" class="val">4</span></span>
+  </div>
+</div>
+
+<div class="panel" style="padding:12px">
+  <div id="stage">
+    <div id="axis"></div>
+    <div id="wrap"><canvas id="cv"></canvas><div id="head"></div><div id="hover"></div></div>
+  </div>
+  <div class="legend">
+    <span><span class="sw" style="background:linear-gradient(90deg,#651569,#d44842,#fac127)"></span>tone threads (warp)</span>
+    <span><span class="sw" style="background:linear-gradient(90deg,#063040,#06b6d4,#cffafe)"></span>noise threads (weft)</span>
+    <span>bright rows = notes in key · cyan rows = the root</span>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <button id="undo" title="Ctrl+Z">↶ Undo</button>
+    <button id="clear">Clear</button>
+    <label class="file" title="Weave a recording onto the loom (plays best in Ghost)">♫ Audio<input id="audioIn" type="file" accept="audio/*"></label>
+    <label class="file" title="Read any picture as sound: top = high, bright = loud">🖼 Picture<input id="imgIn" type="file" accept="image/*"></label>
+    <label class="file" title="Load an AuraGraph tile (or a Paint-a-Tile PNG) with its real pitch axis">◫ AuraGraph tile<input id="tileIn" type="file" accept="image/png,image/*"></label>
+    <button id="playOrig" disabled title="Play the imported recording for comparison">▶ Original</button>
+    <span style="flex:1"></span>
+    <button id="saveWav">⤓ WAV</button>
+    <button id="savePng" title="The loom as you see it">⤓ PNG</button>
+    <button id="saveTile" title="An AuraGraph-format tile (160 bands, 30 Hz–11 kHz)">⤓ Tile</button>
+    <button id="saveProj" title="Save everything to reopen later">⤓ Project</button>
+    <label class="file">⤒ Project<input id="projIn" type="file" accept=".json,.auraloom,application/json"></label>
+  </div>
+  <div id="status"><span id="busy">● weaving… </span><span id="msg"></span></div>
+</div>
+<div class="foot">AuraLoom · ConsciousNode SoftWorks · siblings: <a href="https://consciousnode.github.io/chromatrack/">Chromatrack</a> · <a href="https://consciousnode.github.io/Synth-Radio/">Synth Radio</a> · <a href="https://consciousnode.github.io/Speaker-Box-Magnum/">Speaker Box Magnum</a> · <a href="https://consciousnode.github.io/AuraGraph/">AuraGraph</a></div>
+
+<div id="help-ov"><div id="help">
+  <h2>AuraLoom</h2>
+  <p>A picture of sound you can play. <b>Left to right is time</b> (the faint columns are 16th notes, brighter ones are beats and bars). <b>Bottom to top is pitch</b>: every row is a quarter-tone and every octave is the same height, like a piano turned on its side. <b>Brightness is loudness.</b> Press <kbd>Space</kbd> or ▶ and the loom plays as a loop; keep painting while it plays and you'll hear the change on the next pass.</p>
+  <h3>Threads (brushes)</h3>
+  <ul>
+    <li><b>Tone</b>: a held note. Drag sideways to hold it; drag up or down to glide.</li>
+    <li><b>Pluck</b>: a struck note that rings and fades. Click for one; drag to strum. <b>Ring</b> sets how long it rings.</li>
+    <li><b>Kick, Snare, Hat</b>: drums. Click where you want the hit; with <b>Grid ⊞</b> on they land on the nearest 16th.</li>
+    <li><b>Noise</b>: a soft smear of hiss, breath or wind. Noise threads show in cyan.</li>
+    <li><b>Erase</b>: unpick anything under the brush. <b>Size</b> sets its width.</li>
+  </ul>
+  <h3>Voice, key and scale</h3>
+  <p><b>Voice</b> is the overtone recipe for Tone and Pluck: Pure is a single thread, String and Reed stack harmonics above it (you'll see the ladder), Bell uses the out-of-tune partials of a real bell. <b>Key</b> and <b>Scale</b> snap your notes to the scale; the in-key rows are lit and the root is cyan. <b>Free</b> turns snapping off.</p>
+  <h3>Clean and Ghost</h3>
+  <ul>
+    <li><b>Clean</b>: every tone row is a smooth oscillator, so painted notes are crisp and in tune. Noise threads become real noise.</li>
+    <li><b>Ghost</b>: the whole picture is rebuilt the way an AuraGraph tile plays back, with <i>Griffin-Lim</i> (1984): start with random phase, then go back and forth between sound and picture until they agree. It sounds like a memory of the music. Use it for imported recordings and pictures.</li>
+  </ul>
+  <h3>Bringing things in</h3>
+  <ul>
+    <li><b>♫ Audio</b>: weaves the first stretch of a recording onto the loom (as long as your loop). Paint over it, play it in Ghost, compare with <b>▶ Original</b>.</li>
+    <li><b>🖼 Picture</b>: reads any image as sound. Top is high, bright is loud. Try a photo, a drawing or your handwriting.</li>
+    <li><b>◫ AuraGraph tile</b>: loads a tile made by AuraGraph or Paint-a-Tile using its real pitch axis (30 Hz to 11 kHz), so the notes land where they belong.</li>
+  </ul>
+  <h3>Taking things out</h3>
+  <p><b>WAV</b> is one pass of the loop with the Space reverb. <b>PNG</b> is the loom as you see it. <b>Tile</b> is an AuraGraph-format tile any crew member can read. <b>Project</b> saves everything to reopen later.</p>
+  <h3>Keys</h3>
+  <p><kbd>Space</kbd> play/stop · <kbd>1</kbd>–<kbd>7</kbd> threads · <kbd>[</kbd> <kbd>]</kbd> size · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>G</kbd> Clean/Ghost</p>
+  <p>Everything runs on this device. Nothing is uploaded.</p>
+  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.1 · ConsciousNode SoftWorks · named by Kham, built by Kehai Interim · the playable half of AuraGraph.</p>
+</div></div>
+
+<script>
+'use strict';
+// ================= constants =================
+const SR = 22050, NFFT = 1024, HOP = 256, NR = 200, F0 = 32.70319566, DBR = 60;   // rows: C1 upward in quarter-tones, top ≈ 10.3 kHz
+const rowFreq = r => F0 * Math.pow(2, r / 24);
+const rowOfFreq = f => 24 * Math.log2(f / F0);
+const midiOfRow = r => 24 + r / 2;
+const rowOfMidi = m => (m - 24) * 2;
+const NOTE = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const SCALES = { chromatic:[0,1,2,3,4,5,6,7,8,9,10,11], major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10], pentMaj:[0,2,4,7,9], pentMin:[0,3,5,7,10], dorian:[0,2,3,5,7,9,10], blues:[0,3,5,6,7,10], free:null };
+const TIMBRES = {                                                       // [frequency ratio, amplitude]
+  pure:   [[1,1]],
+  flute:  [[1,1],[2,.35],[3,.12],[4,.05]],
+  string: Array.from({length:12}, (_, i) => [i + 1, 1 / (i + 1)]),
+  reed:   [[1,1],[2,.12],[3,.62],[4,.1],[5,.45],[6,.07],[7,.3],[9,.18],[11,.1]],
+  organ:  [[1,1],[2,.8],[3,.55],[4,.5],[6,.3],[8,.3]],
+  bell:   [[1,1],[2.76,.6],[5.4,.4],[8.93,.25],[13.34,.12]]
+};
+const AG_NB = 160, AG_FMIN = 30, AG_FMAX = 11000;                         // AuraGraph tile format
+const agBandOfFreq = f => Math.log(f / AG_FMIN) / Math.log(AG_FMAX / AG_FMIN) * AG_NB;
+
+// ================= FFT (radix-2, in place) =================
+const rev = new Uint32Array(NFFT); { const bits = Math.log2(NFFT); for (let i = 0; i < NFFT; i++) { let r = 0; for (let j = 0; j < bits; j++) r |= ((i >> j) & 1) << (bits - 1 - j); rev[i] = r; } }
+const cosT = new Float64Array(NFFT / 2), sinT = new Float64Array(NFFT / 2);
+for (let i = 0; i < NFFT / 2; i++) { cosT[i] = Math.cos(2 * Math.PI * i / NFFT); sinT[i] = Math.sin(2 * Math.PI * i / NFFT); }
+function fft(re, im, inverse) {
+  for (let i = 0; i < NFFT; i++) { const j = rev[i]; if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let size = 2; size <= NFFT; size <<= 1) {
+    const half = size >> 1, step = NFFT / size;
+    for (let i = 0; i < NFFT; i += size) for (let j = 0; j < half; j++) {
+      const c = cosT[j * step], s = inverse ? sinT[j * step] : -sinT[j * step];
+      const a = i + j, b = a + half, tr = re[b] * c - im[b] * s, ti = re[b] * s + im[b] * c;
+      re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+    }
+  }
+  if (inverse) for (let i = 0; i < NFFT; i++) { re[i] /= NFFT; im[i] /= NFFT; }
+}
+const win = Float64Array.from({length: NFFT}, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / NFFT));
+const NBIN = NFFT / 2 + 1, df = SR / NFFT;
+// each FFT bin reads the loom at a fractional row
+const binRow = Float32Array.from({length: NBIN}, (_, k) => k === 0 ? -1 : rowOfFreq(k * df));
+
+// ================= state =================
+const $ = id => document.getElementById(id);
+let bpm = 104, bars = 2, secs = 0, cols = 0, tone = null, noise = null;
+let brush = 'pluck', quant = true, mode = 'clean', origBuffer = null;
+const undoStack = [];
+const cv = $('cv'), ctx = cv.getContext('2d');
+const say = t => { $('msg').textContent = t; };
+const levelOf = v => v > 0.001 ? Math.pow(10, (v - 1) * DBR / 20) : 0;     // 0..1 picture level → linear amplitude
+const vOfAmp = a => 1 + 20 * Math.log10(Math.max(a, 1e-9)) / DBR;
+const stepCols = () => cols / (bars * 16);
+
+function layout(newBpm, newBars, how) {             // how: 'stretch' (tempo change) | 'keep' (bar change) | 'new'
+  const oT = tone, oN = noise, oC = cols;
+  bpm = newBpm; bars = newBars; secs = bars * 4 * 60 / bpm;
+  cols = Math.round(secs * SR / HOP);
+  tone = new Float32Array(NR * cols); noise = new Float32Array(NR * cols);
+  if (oT && how !== 'new') for (let r = 0; r < NR; r++) for (let c = 0; c < cols; c++) {
+    const sc = how === 'stretch' ? Math.min(oC - 1, Math.floor(c * oC / cols)) : c;
+    if (sc < oC) { tone[r * cols + c] = oT[r * oC + sc]; noise[r * cols + c] = oN[r * oC + sc]; }
+  }
+  cv.width = cols; cv.height = NR; img = null; drawAxis(); draw(); dirty = true;
+}
+
+// ================= key / scale =================
+function scaleSet() { const s = SCALES[$('scale').value]; if (!s) return null; const root = +$('root').value; return new Set(s.map(x => (x + root) % 12)); }
+function snapRow(rf) {
+  const set = scaleSet(); if (!set) return Math.max(0, Math.min(NR - 1, Math.round(rf)));
+  const mf = midiOfRow(rf); let best = Math.round(mf), bd = 99;
+  for (let m = Math.floor(mf) - 7; m <= Math.ceil(mf) + 7; m++) if (set.has(((m % 12) + 12) % 12) && Math.abs(m - mf) < bd) { bd = Math.abs(m - mf); best = m; }
+  return Math.max(0, Math.min(NR - 1, rowOfMidi(best)));
+}
+const noteName = r => { const m = Math.round(midiOfRow(r)); return NOTE[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1) + (r % 2 ? '+¼' : ''); };
+
+// ================= drawing the loom =================
+const magma = [[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];
+const LUT = new Uint8Array(256 * 3);
+for (let i = 0; i < 256; i++) { const x = i / 255 * (magma.length - 1), k = Math.min(Math.floor(x), magma.length - 2), t = x - k;
+  for (let j = 0; j < 3; j++) LUT[i * 3 + j] = Math.round(magma[k][j] * (1 - t) + magma[k + 1][j] * t); }
+let img = null, bgRow = null, bgCol = null;
+function buildBg() {
+  const set = scaleSet(), root = +$('root').value;
+  bgRow = new Uint8Array(NR * 3);
+  for (let r = 0; r < NR; r++) {
+    let g = 7;
+    if (r % 2 === 0) { const pc = ((midiOfRow(r) % 12) + 12) % 12;
+      if (set ? set.has(pc) : true) g = pc === root && set ? -1 : 16; else g = 9; }
+    if (g === -1) { bgRow[r * 3] = 8; bgRow[r * 3 + 1] = 34; bgRow[r * 3 + 2] = 42; }
+    else { bgRow[r * 3] = g; bgRow[r * 3 + 1] = g; bgRow[r * 3 + 2] = g + 3; }
+  }
+  bgCol = new Uint8Array(cols); const sc = stepCols();
+  for (let k = 0; k < bars * 16; k++) { const c = Math.min(cols - 1, Math.round(k * sc)); bgCol[c] = k % 16 === 0 ? 34 : k % 4 === 0 ? 18 : 8; }
+}
+function draw() {
+  if (!bgRow || !bgCol || bgCol.length !== cols) buildBg();
+  if (!img || img.width !== cols) img = ctx.createImageData(cols, NR);
+  const d = img.data;
+  for (let r = 0; r < NR; r++) { const y = NR - 1 - r, br = bgRow[r * 3], bg = bgRow[r * 3 + 1], bb = bgRow[r * 3 + 2];
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c, p = (y * cols + c) * 4, t = tone[i], n = noise[i], lc = bgCol[c];
+      let R = br + lc, G = bg + lc, B = bb + lc;
+      if (t > 0.001) { const v = Math.min(255, Math.round(t * 255)) * 3; R += LUT[v]; G += LUT[v + 1]; B += LUT[v + 2]; }
+      if (n > 0.001) { const q = n * n; R += 230 * q * q; G += 182 * n + 60 * q; B += 212 * n + 40 * q; }
+      d[p] = R > 255 ? 255 : R; d[p + 1] = G > 255 ? 255 : G; d[p + 2] = B > 255 ? 255 : B; d[p + 3] = 255;
+    } }
+  ctx.putImageData(img, 0, 0);
+}
+function drawAxis() {
+  const ax = $('axis'); ax.innerHTML = ''; const root = +$('root').value;
+  for (let m = 24; m <= 24 + NR / 2; m += 12) { const r = rowOfMidi(m); if (r >= NR) break;
+    const el = document.createElement('div'); el.textContent = 'C' + (Math.floor(m / 12) - 1); el.style.top = (100 * (1 - (r + 0.5) / NR)) + '%'; ax.appendChild(el); }
+  if (root) for (let m = 24 + root; m < 24 + NR / 2; m += 12) { const r = rowOfMidi(m);
+    const el = document.createElement('div'); el.className = 'root'; el.textContent = NOTE[root] + (Math.floor(m / 12) - 1); el.style.top = (100 * (1 - (r + 0.5) / NR)) + '%'; el.style.right = '24px'; el.style.opacity = '.85'; el.style.fontSize = '9px'; ax.appendChild(el); }
+}
+
+// ================= threads (brushes) =================
+function put(L, r, c, v) { r = Math.round(r); c = Math.round(c); if (r < 0 || r >= NR || c < 0 || c >= cols || v <= 0) return; const i = r * cols + c; if (v > L[i]) L[i] = Math.min(1, v); }
+function rub(r, c, rad) { for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) if (dr * dr + dc * dc <= rad * rad) { const rr = Math.round(r + dr), cc = Math.round(c + dc); if (rr >= 0 && rr < NR && cc >= 0 && cc < cols) { tone[rr * cols + cc] = 0; noise[rr * cols + cc] = 0; } } }
+const loudV = () => 0.35 + 0.65 * (+$('loud').value / 100);
+function partials() { return TIMBRES[$('timbre').value] || TIMBRES.pure; }
+function stampNote(row, c, v) {               // one column of a held note with its overtones
+  for (const [ratio, a] of partials()) { const r = row + 24 * Math.log2(ratio); if (r >= NR) break; put(tone, r, c, v + 20 * Math.log10(a) / DBR); }
+}
+function pluck(row, c0) {
+  const ring = Math.max(2, Math.round(+$('ring').value * stepCols())), v = loudV(), P = partials();
+  for (let dc = 0; dc < ring; dc++) { const t = dc / ring;
+    P.forEach(([ratio, a], h) => { const r = row + 24 * Math.log2(ratio); if (r >= NR) return;
+      const fall = t * 0.55 * (1 + 0.35 * h);                   // upper partials die first, like a real string
+      const atk = dc === 0 ? 0.04 : 0;
+      put(tone, r, c0 + dc, v + 20 * Math.log10(a) / DBR - fall - atk); }); }
+}
+function kick(c0) {
+  const v = loudV(), n = Math.round(0.22 * SR / HOP);
+  for (let dc = 0; dc < n; dc++) { const f = 46 + 120 * Math.exp(-dc / 2.2); put(tone, rowOfFreq(f), c0 + dc, v - 0.5 * dc / n); put(tone, rowOfFreq(f) + 1, c0 + dc, v - 0.12 - 0.5 * dc / n); }
+  for (let r = rowOfFreq(1500); r < rowOfFreq(5000); r++) put(noise, r, c0, v * 0.55);
+}
+function snare(c0) {
+  const v = loudV(), n = Math.round(0.17 * SR / HOP);
+  for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(260)); r < NR; r++) put(noise, r, c0 + dc, (v * 0.93 - 0.6 * dc / n) * (0.85 + 0.15 * Math.random()));
+  for (let dc = 0; dc < 4; dc++) { put(tone, rowOfFreq(185), c0 + dc, v - 0.08 - 0.1 * dc); put(tone, rowOfFreq(330), c0 + dc, v - 0.2 - 0.12 * dc); }
+}
+function hat(c0) {
+  const v = loudV(), n = 2 + Math.round(+$('size').value / 3);
+  for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(5500)); r < NR; r++) put(noise, r, c0 + dc, (v - 0.25 * dc / n) * (0.9 + 0.1 * Math.random()));
+}
+function smear(rf, c) { const v = loudV() * 0.85, rad = +$('size').value * 2;
+  for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad / 2; dc <= rad / 2; dc++) { const q = (dr * dr) / (rad * rad) + (dc * dc * 4) / (rad * rad); if (q <= 1) put(noise, rf + dr, c + dc, v * (1 - 0.7 * q) * (0.7 + 0.3 * Math.random())); } }
+const qc = c => quant ? Math.round(c / stepCols()) * stepCols() : c;
+
+let drawing = false, last = null, lockRow = null, lastStrike = -1e9;
+function toLoom(e) { const rc = cv.getBoundingClientRect(); return { c: Math.max(0, Math.min(cols - 1, (e.clientX - rc.left) / rc.width * cols)), r: (1 - (e.clientY - rc.top) / rc.height) * NR, x: e.clientX - rc.left, y: e.clientY - rc.top }; }
+function strokeAt(p, first) {
+  if (brush === 'tone') { const row = snapRow(p.r); stampNote(row, p.c, loudV()); }
+  else if (brush === 'pluck') { const c = qc(p.c), gap = quant ? stepCols() * 0.99 : stepCols() * 0.5;
+    if (first || Math.abs(c - lastStrike) >= gap) { pluck(snapRow(p.r), Math.round(c)); lastStrike = c; } }
+  else if (brush === 'kick' || brush === 'snare' || brush === 'hat') { const c = qc(p.c);
+    if (first || Math.abs(c - lastStrike) >= stepCols() * 0.99) { ({kick, snare, hat})[brush](Math.round(c)); lastStrike = c; } }
+  else if (brush === 'noise') smear(p.r, p.c);
+  else if (brush === 'erase') rub(p.r, p.c, +$('size').value * 1.5);
+}
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault(); cv.setPointerCapture(e.pointerId); pushUndo(); drawing = true; last = toLoom(e); strokeAt(last, true); draw(); touched();
+});
+cv.addEventListener('pointermove', e => {
+  const p = toLoom(e), h = $('hover');
+  const step = Math.floor(p.c / stepCols()), bar = Math.floor(step / 16) + 1, beat = Math.floor(step % 16 / 4) + 1, s16 = step % 4 + 1;
+  const rr = Math.max(0, Math.min(NR - 1, Math.round(p.r)));
+  h.style.display = 'block'; h.style.left = Math.min(p.x + 14, cv.clientWidth - 150) + 'px'; h.style.top = Math.max(p.y - 26, 0) + 'px';
+  h.textContent = bar + '.' + beat + '.' + s16 + ' · ' + noteName(brush === 'tone' || brush === 'pluck' ? snapRow(p.r) : rr) + ' · ' + Math.round(rowFreq(rr)) + ' Hz';
+  if (!drawing) return;
+  if (brush === 'tone' || brush === 'noise' || brush === 'erase') {
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(p.c - last.c), Math.abs(p.r - last.r))));
+    for (let s = 1; s <= steps; s++) strokeAt({ c: last.c + (p.c - last.c) * s / steps, r: last.r + (p.r - last.r) * s / steps }, false);
+  } else strokeAt(p, false);
+  last = p; draw(); touched();
+});
+const endDraw = () => { drawing = false; };
+cv.addEventListener('pointerup', endDraw); cv.addEventListener('pointercancel', endDraw);
+cv.addEventListener('pointerleave', () => { $('hover').style.display = 'none'; });
+function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols }); if (undoStack.length > 40) undoStack.shift(); }
+
+// ================= renderers =================
+// Clean: tone rows → phase-continuous oscillators; noise rows → random-phase spectral noise.
+function renderClean() {
+  const L = cols * HOP, out = new Float32Array(L);
+  for (let r = 0; r < NR; r++) {
+    const f = rowFreq(r); if (f > SR * 0.47) continue;
+    let any = false; for (let c = 0; c < cols; c++) if (tone[r * cols + c] > 0.001) { any = true; break; }
+    if (!any) continue;
+    const w = 2 * Math.PI * f / SR; let ph = Math.random() * 2 * Math.PI;
+    for (let c = 0; c < cols; c++) {
+      const a0 = levelOf(tone[r * cols + c]), a1 = c + 1 < cols ? levelOf(tone[r * cols + c + 1]) : 0;
+      const base = c * HOP;
+      if (a0 === 0 && a1 === 0) { ph = (ph + w * HOP) % (2 * Math.PI); continue; }
+      const da = (a1 - a0) / HOP;
+      for (let i = 0; i < HOP; i++) { out[base + i] += (a0 + da * i) * Math.sin(ph); ph += w; }
+      ph %= 2 * Math.PI;
+    }
+  }
+  // noise layer
+  let anyN = false; for (let i = 0; i < noise.length; i++) if (noise[i] > 0.001) { anyN = true; break; }
+  if (anyN) {
+    const nz = new Float32Array(L + NFFT), re = new Float64Array(NFFT), im = new Float64Array(NFFT);
+    for (let c = 0; c < cols; c++) {
+      let live = false;
+      for (let k = 0; k < NBIN; k++) {
+        const rf = binRow[k]; let m = 0;
+        if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, v = noise[r0 * cols + c] * (1 - t) + noise[(r0 + 1) * cols + c] * t; m = levelOf(v); }
+        const a = Math.random() * 2 * Math.PI; re[k] = m * Math.cos(a) * 28; im[k] = m * Math.sin(a) * 28; if (m) live = true;
+      }
+      if (!live) continue;
+      im[0] = 0; im[NFFT / 2] = 0;
+      for (let k = 1; k < NFFT / 2; k++) { re[NFFT - k] = re[k]; im[NFFT - k] = -im[k]; }
+      fft(re, im, true);
+      const base = c * HOP - (NFFT - HOP) / 2;
+      for (let i = 0; i < NFFT; i++) { const j = base + i; if (j >= 0 && j < L) nz[j] += re[i] * win[i] / 1.5; }
+    }
+    for (let i = 0; i < L; i++) out[i] += nz[i];
+  }
+  for (let i = 0; i < L; i++) out[i] = Math.tanh(out[i] * 0.9);
+  const fade = 64; for (let i = 0; i < fade; i++) { out[i] *= i / fade; out[L - 1 - i] *= i / fade; }
+  return out;
+}
+// Ghost: the whole picture through Griffin-Lim, as AuraGraph tiles play back.
+async function renderGhost(iters, onProgress) {
+  const mag = new Float32Array(cols * NBIN);
+  for (let c = 0; c < cols; c++) for (let k = 0; k < NBIN; k++) {
+    const rf = binRow[k]; if (rf < 0 || rf >= NR - 1) continue;
+    const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * cols + c, i1 = i0 + cols;
+    const v = Math.max(tone[i0], noise[i0]) * (1 - t) + Math.max(tone[i1], noise[i1]) * t;
+    mag[c * NBIN + k] = levelOf(v);
+  }
+  const len = (cols - 1) * HOP + NFFT, out = new Float32Array(len), norm = new Float32Array(len);
+  for (let c = 0; c < cols; c++) for (let i = 0; i < NFFT; i++) norm[c * HOP + i] += win[i] * win[i];
+  const phRe = new Float32Array(cols * NBIN), phIm = new Float32Array(cols * NBIN);
+  for (let i = 0; i < phRe.length; i++) { const a = Math.random() * 2 * Math.PI; phRe[i] = Math.cos(a); phIm[i] = Math.sin(a); }
+  const re = new Float64Array(NFFT), im = new Float64Array(NFFT);
+  const istft = () => { out.fill(0);
+    for (let c = 0; c < cols; c++) {
+      for (let k = 0; k < NBIN; k++) { const m = mag[c * NBIN + k]; re[k] = m * phRe[c * NBIN + k]; im[k] = m * phIm[c * NBIN + k]; }
+      for (let k = 1; k < NFFT / 2; k++) { re[NFFT - k] = re[k]; im[NFFT - k] = -im[k]; }
+      fft(re, im, true);
+      for (let i = 0; i < NFFT; i++) out[c * HOP + i] += re[i] * win[i];
+    }
+    for (let i = 0; i < len; i++) out[i] /= Math.max(norm[i], 0.5); };
+  for (let it = 0; it < iters; it++) {
+    istft();
+    for (let c = 0; c < cols; c++) {
+      for (let i = 0; i < NFFT; i++) { re[i] = out[c * HOP + i] * win[i]; im[i] = 0; }
+      fft(re, im, false);
+      for (let k = 0; k < NBIN; k++) { const r = Math.hypot(re[k], im[k]) || 1; phRe[c * NBIN + k] = re[k] / r; phIm[c * NBIN + k] = im[k] / r; }
+    }
+    if (it % 3 === 2) { onProgress && onProgress(it + 1, iters); await new Promise(r => setTimeout(r)); }
+  }
+  istft();
+  const L = cols * HOP, res = new Float32Array(L), off = (NFFT - HOP) / 2;   // centre the frames on their columns
+  let peak = 0; for (let i = 0; i < L; i++) { res[i] = out[i + off] || 0; peak = Math.max(peak, Math.abs(res[i])); }
+  if (peak > 0) for (let i = 0; i < L; i++) res[i] *= 0.85 / peak;
+  const fade = 64; for (let i = 0; i < fade; i++) { res[i] *= i / fade; res[L - 1 - i] *= i / fade; }
+  return res;
+}
+let dirty = true, rendered = null, rendering = null;
+async function render() {
+  if (!dirty && rendered && rendered.length === cols * HOP) return rendered;
+  if (rendering) { await rendering; if (!dirty) return rendered; }
+  dirty = false; $('busy').style.display = 'inline';
+  rendering = (async () => {
+    const t0 = performance.now();
+    let s;
+    if (mode === 'clean') { await new Promise(r => setTimeout(r)); s = renderClean(); }
+    else s = await renderGhost(32, (n, of) => { $('busy').textContent = '● weaving ghost ' + n + '/' + of + '… '; });
+    rendered = s; $('busy').style.display = 'none'; $('busy').textContent = '● weaving… ';
+    lastRenderMs = performance.now() - t0;
+    return s;
+  })();
+  const s = await rendering; rendering = null; return s;
+}
+let lastRenderMs = 0;
+
+// ================= playback =================
+let actx = null, master = null, wet = null, dry = null, srcNode = null, t0 = 0, raf = 0, playing = false;
+function audio() {
+  if (actx) return actx;
+  actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+  master = actx.createGain(); dry = actx.createGain(); wet = actx.createGain();
+  const conv = actx.createConvolver(); conv.buffer = makeIR(actx, 2.4);
+  master.connect(dry); master.connect(conv); conv.connect(wet); dry.connect(actx.destination); wet.connect(actx.destination);
+  setMix(); return actx;
+}
+function makeIR(a, dur) { const n = Math.round(a.sampleRate * dur), b = a.createBuffer(2, n, a.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2) * (i < 300 ? i / 300 : 1); } return b; }
+function setMix() { if (!actx) return; const v = +$('vol').value / 100, s = +$('space').value / 100;
+  master.gain.value = v; dry.gain.value = 1 - 0.45 * s; wet.gain.value = 0.55 * s; }
+function startAt(samples, offset) {
+  const a = audio(); const buf = a.createBuffer(1, samples.length, SR); buf.copyToChannel(samples, 0);
+  const n = a.createBufferSource(); n.buffer = buf; n.loop = true; n.connect(master);
+  const dur = buf.duration; offset = ((offset % dur) + dur) % dur;
+  n.start(0, offset); if (srcNode) { try { srcNode.stop(); } catch (e) {} }
+  srcNode = n; t0 = a.currentTime - offset; loopDur = dur;
+}
+let loopDur = 1;
+async function play() {
+  const a = audio(); await a.resume();
+  const s = await render(); if (!silentCheck(s)) { say('The loom is empty. Paint something first.'); return; }
+  playing = true; startAt(s, 0); $('play').textContent = '■ Stop'; $('play').classList.add('live');
+  $('head').style.display = 'block'; tick();
+  say((mode === 'clean' ? 'Clean' : 'Ghost') + ' · ' + bars + ' bar' + (bars > 1 ? 's' : '') + ' at ' + bpm + ' BPM · woven in ' + (lastRenderMs / 1000).toFixed(2) + ' s. Keep painting; changes play on the fly.');
+}
+function stop() { playing = false; if (srcNode) { try { srcNode.stop(); } catch (e) {} srcNode = null; } cancelAnimationFrame(raf); $('head').style.display = 'none'; $('play').textContent = '▶ Play'; $('play').classList.remove('live'); }
+function tick() { if (!playing) return; const t = ((actx.currentTime - t0) % loopDur) / loopDur; $('head').style.left = (t * 100) + '%'; raf = requestAnimationFrame(tick); }
+function silentCheck(s) { if (!s) return false; for (let i = 0; i < s.length; i += 7) if (Math.abs(s[i]) > 1e-4) return true; return false; }
+let swapTimer = 0;
+function touched() {
+  dirty = true; if (!playing) return;
+  clearTimeout(swapTimer);
+  swapTimer = setTimeout(async () => { const s = await render(); if (playing && s) startAt(s, actx.currentTime - t0); }, mode === 'clean' ? 140 : 600);
+}
+
+// ================= imports =================
+async function decodeToLoop(file) {
+  const decoded = await audio().decodeAudioData(await file.arrayBuffer());
+  const n = Math.min(Math.ceil(decoded.duration * SR), cols * HOP);
+  const off = new OfflineAudioContext(1, Math.max(n, 1), SR), s = off.createBufferSource(); s.buffer = decoded; s.connect(off.destination); s.start();
+  const mono = (await off.startRendering()).getChannelData(0);
+  const x = new Float32Array(cols * HOP); x.set(mono.subarray(0, Math.min(mono.length, x.length))); return x;
+}
+$('audioIn').onchange = async e => {
+  const file = e.target.files[0]; if (!file) return; e.target.value = '';
+  say('Weaving ' + file.name + '…');
+  try {
+    const x = await decodeToLoop(file); origBuffer = x; $('playOrig').disabled = false;
+    pushUndo();
+    const M = new Float32Array(cols * NBIN), re = new Float64Array(NFFT), im = new Float64Array(NFFT);
+    for (let c = 0; c < cols; c++) { const base = c * HOP - (NFFT - HOP) / 2;
+      for (let i = 0; i < NFFT; i++) { const j = base + i; re[i] = (j >= 0 && j < x.length ? x[j] : 0) * win[i]; im[i] = 0; }
+      fft(re, im, false); for (let k = 0; k < NBIN; k++) M[c * NBIN + k] = Math.hypot(re[k], im[k]); }
+    const B = new Float32Array(NR * cols);
+    for (let r = 0; r < NR; r++) { const f = rowFreq(r), lo = f * Math.pow(2, -1 / 48) / df, hi = f * Math.pow(2, 1 / 48) / df;
+      const k0 = Math.ceil(lo), k1 = Math.floor(hi);
+      for (let c = 0; c < cols; c++) { let v = 0;
+        if (k1 >= k0) { for (let k = k0; k <= k1; k++) v += M[c * NBIN + k]; v /= (k1 - k0 + 1); }
+        else { const kf = f / df, ka = Math.floor(kf), t = kf - ka; v = M[c * NBIN + ka] * (1 - t) + M[c * NBIN + Math.min(NBIN - 1, ka + 1)] * t; }
+        B[r * cols + c] = v; } }
+    const sorted = Float32Array.from(B).sort(), ref = sorted[Math.floor(sorted.length * 0.997)] || 1;
+    noise.fill(0); for (let i = 0; i < B.length; i++) tone[i] = Math.max(0, Math.min(1, 1 + 20 * Math.log10(Math.max(B[i], 1e-10) / ref) / DBR));
+    setMode('ghost'); draw(); touched();
+    say('“' + file.name + '” is woven in (first ' + secs.toFixed(1) + ' s). Ghost mode is on: ▶ to hear it rebuilt, ▶ Original for the real thing.');
+  } catch (err) { say('Could not read that audio: ' + err.message); }
+};
+function readImage(file, cb) { const im = new Image(); im.onload = () => { cb(im); URL.revokeObjectURL(im.src); }; im.onerror = () => say('Could not read that picture.'); im.src = URL.createObjectURL(file); }
+function pixelsOf(im, w, h) { const oc = document.createElement('canvas'); oc.width = w; oc.height = h; const o = oc.getContext('2d'); o.drawImage(im, 0, 0, w, h); return o.getImageData(0, 0, w, h).data; }
+const lumaAt = (d, p) => (0.2126 * d[p] + 0.7152 * d[p + 1] + 0.0722 * d[p + 2]) / 255 * (d[p + 3] / 255);
+$('imgIn').onchange = e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
+  readImage(file, im => { const d = pixelsOf(im, cols, NR); pushUndo(); noise.fill(0);
+    for (let y = 0; y < NR; y++) for (let c = 0; c < cols; c++) tone[(NR - 1 - y) * cols + c] = lumaAt(d, (y * cols + c) * 4);
+    setMode('ghost'); draw(); touched(); say('Picture woven in: top = high, bright = loud. Ghost mode is on; ▶ to hear it.'); }); };
+$('tileIn').onchange = e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
+  readImage(file, im => { const d = pixelsOf(im, cols, AG_NB); pushUndo(); tone.fill(0); noise.fill(0);
+    for (let r = 0; r < NR; r++) { const b = agBandOfFreq(rowFreq(r)) - 0.5; if (b < 0 || b > AG_NB - 1) continue;
+      const b0 = Math.floor(b), t = b - b0, y0 = AG_NB - 1 - b0, y1 = Math.max(0, y0 - 1);
+      for (let c = 0; c < cols; c++) tone[r * cols + c] = lumaAt(d, (y0 * cols + c) * 4) * (1 - t) + lumaAt(d, (y1 * cols + c) * 4) * t; }
+    setMode('ghost'); draw(); touched(); say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.'); }); };
+$('playOrig').onclick = async () => { if (!origBuffer) return; await audio().resume(); stop(); const n = actx.createBufferSource(), b = actx.createBuffer(1, origBuffer.length, SR); b.copyToChannel(origBuffer, 0); n.buffer = b; n.connect(master); n.start(); say('Playing the original recording.'); };
+
+// ================= exports =================
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000); }
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+function wavBlob(chs, rate) { const n = chs[0].length, nc = chs.length, buf = new ArrayBuffer(44 + n * 2 * nc), v = new DataView(buf), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2 * nc, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nc, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2 * nc, true); v.setUint16(32, 2 * nc, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2 * nc, true);
+  for (let i = 0, o = 44; i < n; i++) for (let ch = 0; ch < nc; ch++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, chs[ch][i])) * 32767, true);
+  return new Blob([buf], { type: 'audio/wav' }); }
+$('saveWav').onclick = async () => {
+  const s = await render(); if (!silentCheck(s)) { say('Nothing to save yet.'); return; }
+  const sp = +$('space').value / 100, tail = sp > 0 ? 1.6 : 0, n = s.length + Math.round(tail * SR);
+  const off = new OfflineAudioContext(2, n, SR), b = off.createBuffer(1, s.length, SR); b.copyToChannel(s, 0);
+  const src = off.createBufferSource(); src.buffer = b;
+  const g = off.createGain(), dG = off.createGain(), wG = off.createGain(), cv2 = off.createConvolver(); cv2.buffer = makeIR(off, 2.4);
+  g.gain.value = +$('vol').value / 100; dG.gain.value = 1 - 0.45 * sp; wG.gain.value = 0.55 * sp;
+  src.connect(g); g.connect(dG); g.connect(cv2); cv2.connect(wG); dG.connect(off.destination); wG.connect(off.destination); src.start();
+  const out = await off.startRendering(); download(wavBlob([out.getChannelData(0), out.getChannelData(1)], SR), 'auraloom-' + stamp() + '.wav'); say('WAV saved: one pass of the loop, with the Space tail.');
+};
+$('savePng').onclick = () => cv.toBlob(b => download(b, 'auraloom-' + stamp() + '.png'));
+$('saveTile').onclick = () => {
+  const oc = document.createElement('canvas'); oc.width = cols; oc.height = AG_NB; const o = oc.getContext('2d'), im = o.createImageData(cols, AG_NB), d = im.data;
+  for (let b = 0; b < AG_NB; b++) { const f = AG_FMIN * Math.pow(AG_FMAX / AG_FMIN, (b + 0.5) / AG_NB), rf = rowOfFreq(f), y = AG_NB - 1 - b;
+    for (let c = 0; c < cols; c++) { let v = 0;
+      if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * cols + c; v = Math.max(tone[i0], noise[i0]) * (1 - t) + Math.max(tone[i0 + cols], noise[i0 + cols]) * t; }
+      const k = Math.max(0, Math.min(255, Math.round(v * 255))) * 3, p = (y * cols + c) * 4; d[p] = LUT[k]; d[p + 1] = LUT[k + 1]; d[p + 2] = LUT[k + 2]; d[p + 3] = 255; } }
+  o.putImageData(im, 0, 0); oc.toBlob(b => download(b, 'auraloom-tile-' + stamp() + '.png')); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
+};
+const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+const q8 = L => Uint8Array.from(L, v => Math.round(v * 255));
+$('saveProj').onclick = () => {
+  const p = { app: 'AuraLoom', v: 1, bpm, bars, cols, rows: NR, root: +$('root').value, scale: $('scale').value, timbre: $('timbre').value, mode, space: +$('space').value, tone: b64(q8(tone)), noise: b64(q8(noise)) };
+  download(new Blob([JSON.stringify(p)], { type: 'application/json' }), 'auraloom-' + stamp() + '.auraloom.json'); say('Project saved.');
+};
+$('projIn').onchange = async e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
+  try { const p = JSON.parse(await file.text()); if (p.app !== 'AuraLoom' || p.rows !== NR) throw new Error('not an AuraLoom project');
+    stop(); $('bpm').value = p.bpm; $('bars').value = p.bars; $('root').value = p.root; $('scale').value = p.scale; $('timbre').value = p.timbre || 'string'; $('space').value = p.space ?? 22;
+    layout(p.bpm, p.bars, 'new'); if (p.cols !== cols) throw new Error('size mismatch');
+    const T = unb64(p.tone), N = unb64(p.noise); for (let i = 0; i < tone.length; i++) { tone[i] = T[i] / 255; noise[i] = N[i] / 255; }
+    bgRow = null; setMode(p.mode || 'clean'); drawAxis(); draw(); setMix(); undoStack.length = 0; say('Project “' + file.name + '” loaded.');
+  } catch (err) { say('Could not load that project: ' + err.message); } };
+
+// ================= controls =================
+function setMode(m) { mode = m; $('mode').textContent = m === 'clean' ? 'Clean' : 'Ghost'; $('mode').classList.toggle('on', m === 'ghost'); touched(); say(m === 'clean' ? 'Clean: every tone thread is a steady, in-tune oscillator.' : 'Ghost: the picture is rebuilt by Griffin-Lim, the way AuraGraph tiles play back. Slower to weave, hauntier to hear.'); }
+$('mode').onclick = () => setMode(mode === 'clean' ? 'ghost' : 'clean');
+$('play').onclick = () => playing ? stop() : play();
+document.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => selectBrush(b.dataset.brush));
+function selectBrush(name) { brush = name; document.querySelectorAll('[data-brush]').forEach(x => x.classList.toggle('on', x.dataset.brush === name)); }
+$('quant').onclick = () => { quant = !quant; $('quant').classList.toggle('on', quant); };
+for (const id of ['loud', 'size', 'ring']) { const f = () => { $(id + 'V').textContent = $(id).value; }; $(id).oninput = f; f(); }
+$('vol').oninput = setMix; $('space').oninput = setMix;
+NOTE.forEach((n, i) => { const o = document.createElement('option'); o.value = i; o.textContent = n; if (i === 9) o.selected = true; $('root').appendChild(o); });
+$('root').onchange = $('scale').onchange = () => { bgRow = null; drawAxis(); draw(); };
+$('bpm').onchange = () => { const v = Math.max(40, Math.min(240, Math.round(+$('bpm').value) || bpm)); $('bpm').value = v; if (v === bpm) return; const was = playing; stop(); layout(v, bars, 'stretch'); if (was) play(); };
+$('bars').onchange = () => { const was = playing; stop(); layout(bpm, +$('bars').value, 'keep'); if (was) play(); };
+$('undo').onclick = () => { const u = undoStack.pop(); if (!u) return; if (u.cols !== cols) { say('Undo history was cleared by the tempo or length change.'); return; } tone = u.t; noise = u.n; draw(); touched(); };
+$('clear').onclick = () => { pushUndo(); tone.fill(0); noise.fill(0); draw(); touched(); say('Cleared. (Undo brings it back.)'); };
+$('helpBtn').onclick = () => $('help-ov').classList.add('on');
+$('help-ov').onclick = e => { if (e.target.id === 'help-ov') $('help-ov').classList.remove('on'); };
+const KEYB = ['tone', 'pluck', 'kick', 'snare', 'hat', 'noise', 'erase'];
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'Escape') $('help-ov').classList.remove('on');
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('undo').click(); }
+  else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
+  else if (e.key >= '1' && e.key <= '7') selectBrush(KEYB[+e.key - 1]);
+  else if (e.key === '[' || e.key === ']') { const s = $('size'); s.value = Math.max(1, Math.min(10, +s.value + (e.key === ']' ? 1 : -1))); s.oninput(); }
+  else if (e.key.toLowerCase() === 'g') $('mode').click();
+});
+
+// ================= a starter loop, so the first ▶ makes music =================
+layout(104, 2, 'new');
+(function starter() {
+  const sc = stepCols(), at = s => Math.round(s * sc), keepB = brush, keepT = $('timbre').value, keepR = $('ring').value;
+  for (let s = 0; s < 32; s += 8) kick(at(s));
+  kick(at(22));
+  for (let s = 4; s < 32; s += 8) snare(at(s));
+  for (let s = 0; s < 32; s += 2) { $('size').value = s % 4 === 2 ? 2 : 1; hat(at(s)); }
+  $('size').value = 3;
+  $('timbre').value = 'string'; $('ring').value = 3;
+  const A = rowOfMidi(57), arp = [[0, 0], [3, 3], [6, 7], [8, 12], [11, 7], [14, 3], [16, 5], [19, 8], [22, 12], [24, 8], [27, 3], [30, 7]];
+  for (const [s, semi] of arp) pluck(A + semi * 2, at(s));
+  $('timbre').value = 'flute';
+  for (let c = at(0); c < at(14); c++) stampNote(rowOfMidi(45), c, 0.62);
+  for (let c = at(16); c < at(30); c++) stampNote(rowOfMidi(41), c, 0.62);
+  $('timbre').value = keepT; $('ring').value = keepR; $('ringV').textContent = keepR; brush = keepB; draw();
+})();
+say('A little loop in A minor is already woven. Press ▶ (or Space), then paint your own threads while it plays.');
+window.__loom = { get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+</script>
+</body>
+</html>
