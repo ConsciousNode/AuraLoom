@@ -35,6 +35,9 @@
   time, 1–8 up its pitch, then a–h / 1–8 inside a cell) drawn over the loom; notes and questions
   pinned to spots, with replies; notes keep real seconds/Hz and the exact clicked spot, and ride in
   the tile chunk and the project file. The tile is exported over its own frame, so a clip stays a clip.
+  v0.6.1: no clicks at note changes (each tone row's envelope is smoothed at the sample rate instead of
+  having linear corners); scored tones
+  always end one column before the next step, so repeated notes re-articulate every time.
 -->
 <html lang="en">
 <head>
@@ -527,6 +530,11 @@ function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols, 
 
 // ================= renderers =================
 // Clean: tone rows → phase-continuous oscillators; noise rows → random-phase spectral noise.
+const SMOOTH = HOP;                                   // envelope smoothing width, samples
+function smoothEnv(e, W) {                             // centred moving average, in place, via a running sum
+  const n = e.length, h = W >> 1, src = Float32Array.from(e); let acc = 0;
+  for (let i = 0; i < Math.min(n, h); i++) acc += src[i];
+  for (let i = 0; i < n; i++) { const a = i + h, b = i - h - 1; if (a < n) acc += src[a]; if (b >= 0) acc -= src[b]; e[i] = acc / (2 * h + 1); } }
 function renderClean(T, N, C, L) {
   T = T || tone; N = N || noise; C = C || cols; L = L || loopLen();
   const out = new Float32Array(Math.max(L, C * HOP));
@@ -535,14 +543,14 @@ function renderClean(T, N, C, L) {
     let any = false; for (let c = 0; c < C; c++) if (T[r * C + c] > 0.001) { any = true; break; }
     if (!any) continue;
     const w = 2 * Math.PI * f / SR; let ph = Math.random() * 2 * Math.PI;
-    for (let c = 0; c < C; c++) {
-      const a0 = levelOf(T[r * C + c]), a1 = c + 1 < C ? levelOf(T[r * C + c + 1]) : 0;
-      const base = c * HOP;
-      if (a0 === 0 && a1 === 0) { ph = (ph + w * HOP) % (2 * Math.PI); continue; }
-      const da = (a1 - a0) / HOP;
-      for (let i = 0; i < HOP; i++) { out[base + i] += (a0 + da * i) * Math.sin(ph); ph += w; }
-      ph %= 2 * Math.PI;
-    }
+    // the row's loudness, column by column, joined into one envelope at the sample rate and then smoothed:
+    // a corner (a note starting, stopping, or a glide handing off between rows) used to splatter energy up the whole
+    // spectrum and draw a stripe at every note change (found by LEGIBILITY-1). Two passes of a box ~11.6 ms wide.
+    const n = C * HOP, env = new Float32Array(n);
+    for (let c = 0; c < C; c++) { const a0 = levelOf(T[r * C + c]), a1 = c + 1 < C ? levelOf(T[r * C + c + 1]) : 0, base = c * HOP;
+      if (a0 === 0 && a1 === 0) continue; const da = (a1 - a0) / HOP; for (let i = 0; i < HOP; i++) env[base + i] = a0 + da * i; }
+    smoothEnv(env, SMOOTH); smoothEnv(env, SMOOTH);
+    for (let i = 0; i < n; i++) { const e = env[i]; if (e > 1e-6) out[i] += e * Math.sin(ph); ph += w; if (ph > 6.283185307179586) ph -= 6.283185307179586; }
   }
   // noise layer
   let anyN = false; for (let i = 0; i < N.length; i++) if (N[i] > 0.001) { anyN = true; break; }
@@ -1098,7 +1106,7 @@ function weaveScore(text) {
       else if (ev.thread === 'openhat') hat(c0, v, true);
       else if (ev.thread === 'pluck') for (const m of notes) pluck(rowOfMidi(m), c0, { ring: len || +$('ring').value, v, voice });
       else if (ev.thread === 'tone') {
-        const L = Math.max(1, Math.round((len || 1) * sc) - 1);
+        const L = Math.max(1, colOf(st + (len || 1)) - c0 - 1);   // always end one column before the next step: repeats re-articulate, every time
         for (let dc = 0; dc < L; dc++) for (let k = 0; k < notes.length; k++) {
           const m = glide ? glide[0] + (glide[1] - glide[0]) * dc / Math.max(1, L - 1) : notes[k];
           stampNote(rowOfMidi(m), c0 + dc, v, dc * HOP / SR + (ev.opts.age != null ? +ev.opts.age : 0), voice); }
