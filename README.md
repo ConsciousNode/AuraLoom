@@ -18,11 +18,12 @@ AuraLoom is the playable half of [AuraGraph](https://github.com/ConsciousNode/Au
 - **Stretch, a lens for sound:** widen the loom (up to 64×) or pinch it in time, with pitch untouched, to study a sound's shape in slow motion: the rivers of its harmonics, the valleys between, how energy pours in and drains away. Kham found this. **Listen** plays at ½, ¼ or ⅛ speed with the same pitch, and BPM changes on painted work redraw it from its threads, so nothing blurs.
 - **It plays as a loop while you paint.** Changes are woven in on the fly.
 - **Imports:** a recording, any picture, or an AuraGraph / Paint-a-Tile tile (placed on its real 30 Hz–11 kHz axis).
+- **Clips that know where they are:** a piece cut out of a tile (by AuraGraph's `clip.py`, for instance) carries its own time and pitch bounds, inside the PNG or in its filename (`…_t12.3-13.1_f200-800.png`). AuraLoom reads them, makes the loop exactly that long and puts every note back at its real pitch. Tested on a melodica clip: median pitch error 0 cents with the bounds, about 10 semitones without them.
 - **Exports:**
   - WAV: one pass of the loop, with the Space reverb tail
   - Loop WAV: exactly one loop long (sample-accurate to the tempo), with the tail folded over the start, so it repeats seamlessly in any player, DAW or game engine
   - PNG of the loom
-  - AuraGraph-format tile: 160 bands that any crew member can read
+  - AuraGraph-format tile: 160 bands that any crew member can read, with its bounds inside
   - Project file, to reopen later
 
 One HTML file. Zero dependencies. Works offline. Nothing is uploaded.

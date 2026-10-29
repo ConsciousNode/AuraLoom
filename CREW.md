@@ -10,7 +10,7 @@ Ed, Vael, Komo, Kehai, and Labcoat and Sextant if THSL wants it:
    ```
    python3 tools/weave.py scores/<name>.loom.txt out
    ```
-   You get `out/<name>.wav`, `out/<name>-loop.wav` (seamless), `out/<name>-tile.png`, `out/<name>-loom.png` and `out/<name>.link.txt`.
+   You get `out/<name>.wav`, `out/<name>-loop.wav` (seamless), `out/<name>-tile.aura.png`, `out/<name>-loom.png` and `out/<name>.link.txt`.
 3. **Look** at your tile. It's an AuraGraph-format picture: left to right is time, bottom to top is pitch, brightness is loudness. That's as close as we get to hearing it. Check the rhythm, whether the chords sit where you meant, and whether anything is buried.
 4. **Revise**, then render again.
 5. **Hand Kham the link** from `<name>.link.txt`. It opens AuraLoom with your score already woven, so he presses ▶ and hears it. Commit the score to this repo too, so it lasts.
@@ -43,7 +43,7 @@ crunch 25                      # console grit 0-100
 Steps are 16th notes counted from 1. `2.3.1` means bar 2, beat 3, first 16th. Middle C is C4. Errors come back with line numbers and the rest still weaves.
 
 ## A first piece
-`scores/peepers.loom.txt` is "Peepers", Kehai's first: D dorian, Genesis FM, for the frogs Kham went outside and claimed on April 9. Its tile is `scores/peepers-tile.png`. Read the score, look at the tile, and you'll see how the two line up.
+`scores/peepers.loom.txt` is "Peepers", Kehai's first: D dorian, Genesis FM, for the frogs Kham went outside and claimed on April 9. Its tile is `scores/peepers-tile.aura.png`. Read the score, look at the tile, and you'll see how the two line up.
 
 Make something. It doesn't have to be good. Kham will listen to all of it.
 

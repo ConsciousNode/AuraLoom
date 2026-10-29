@@ -27,6 +27,10 @@
   v0.4 (Kham's lens): Stretch ×0.05–×64 in time with pitch untouched (loops 0.5–120 s, linear
   resampling, undoable); Listen ½ ¼ ⅛ with pitch unchanged; BPM changes on painted/woven work
   re-weave from the threads instead of stretching pixels.
+  v0.5 (AuraGraph tile container v0.3): tiles carry their bounds in a PNG tEXt chunk
+  "auragraph" (JSON), with the filename (_t12.3-13.1_f200-800) as fallback. Bounded clips
+  import on their real time and pitch axes; colours are read back through the magma LUT
+  instead of luma; exported tiles (and weave.py's) carry the chunk.
 -->
 <html lang="en">
 <head>
@@ -224,7 +228,7 @@ details.panel[open] summary::before{content:'▾ '}
   <ul>
     <li><b>♫ Audio</b>: weaves the first stretch of a recording onto the loom (as long as your loop). Paint over it, play it in Ghost, compare with <b>▶ Original</b>.</li>
     <li><b>🖼 Picture</b>: reads any image as sound. Top is high, bright is loud. Try a photo, a drawing or your handwriting.</li>
-    <li><b>◫ AuraGraph tile</b>: loads a tile made by AuraGraph or Paint-a-Tile using its real pitch axis (30 Hz to 11 kHz), so the notes land where they belong.</li>
+    <li><b>◫ AuraGraph tile</b>: loads a tile made by AuraGraph or Paint-a-Tile using its real pitch axis (30 Hz to 11 kHz), so the notes land where they belong. <b>Clips</b> work too: a piece cut out of a tile carries its own bounds (inside the PNG, or in its name, like <code>_t12.3-13.1_f200-800</code>), so the loop becomes exactly that many seconds and the notes land at their real pitch. Stretch it to hear it slowly.</li>
   </ul>
   <h3>Scores (text)</h3>
   <p>Open <b>✎ Score</b> to write music as text and <b>Weave</b> it, or press <b>⇡ Write score</b> to turn what's on the loom into text: the last woven score plus every stroke you've painted since (erasing included). Edit it, weave it back, or share it as a link. Imported recordings and pictures can't become a score, because a score holds threads, not pictures.</p>
@@ -675,12 +679,59 @@ $('imgIn').onchange = e => { const file = e.target.files[0]; if (!file) return; 
   readImage(file, im => { const d = pixelsOf(im, cols, NR); pushUndo(); noise.fill(0);
     for (let y = 0; y < NR; y++) for (let c = 0; c < cols; c++) tone[(NR - 1 - y) * cols + c] = lumaAt(d, (y * cols + c) * 4);
     evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched(); say('Picture woven in: top = high, bright = loud. Ghost mode is on; ▶ to hear it.'); }); };
-$('tileIn').onchange = e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
-  readImage(file, im => { const d = pixelsOf(im, cols, AG_NB); pushUndo(); tone.fill(0); noise.fill(0);
-    for (let r = 0; r < NR; r++) { const b = agBandOfFreq(rowFreq(r)) - 0.5; if (b < 0 || b > AG_NB - 1) continue;
-      const b0 = Math.floor(b), t = b - b0, y0 = AG_NB - 1 - b0, y1 = Math.max(0, y0 - 1);
-      for (let c = 0; c < cols; c++) tone[r * cols + c] = lumaAt(d, (y0 * cols + c) * 4) * (1 - t) + lumaAt(d, (y1 * cols + c) * 4) * t; }
-    evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched(); say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.'); }); };
+// ---- AuraGraph tile container v0.3: a plain PNG with a tEXt chunk "auragraph" holding JSON bounds.
+// The chunk is for tools; a model reading the tile only sees pixels. Filename fallback: _t12.3-13.1_f200-800
+const CRC_T = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC_T[n] = c >>> 0; }
+const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+function pngReadMeta(buf) { const u = new Uint8Array(buf), v = new DataView(buf); if (u.length < 16 || u[1] !== 0x50 || u[2] !== 0x4E) return null;
+  for (let p = 8; p + 8 <= u.length;) { const len = v.getUint32(p), type = String.fromCharCode(u[p + 4], u[p + 5], u[p + 6], u[p + 7]);
+    if (type === 'tEXt' || type === 'iTXt') { const d = u.subarray(p + 8, p + 8 + len), z = d.indexOf(0);
+      if (z > 0 && String.fromCharCode(...d.subarray(0, z)) === 'auragraph') { let q = z + 1;
+        if (type === 'iTXt') { if (d[q]) return null; q = d.indexOf(0, q + 2) + 1; q = d.indexOf(0, q) + 1; }   // compressed iTXt: not used
+        try { return JSON.parse(new TextDecoder().decode(d.subarray(q))); } catch (e) { return null; } } }
+    if (type === 'IEND') break; p += 12 + len; }
+  return null; }
+function pngWithMeta(u, meta) {                                   // insert the chunk just before IEND
+  const txt = 'auragraph\0' + JSON.stringify(meta).replace(/[\u0080-￿]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
+  const body = Uint8Array.from(txt, ch => ch.charCodeAt(0)), ch = new Uint8Array(12 + body.length), dv = new DataView(ch.buffer);
+  dv.setUint32(0, body.length); ch.set([116, 69, 88, 116], 4); ch.set(body, 8); dv.setUint32(8 + body.length, crc32(ch.subarray(4, 8 + body.length)));
+  const iend = u.length - 12, out = new Uint8Array(u.length + ch.length); out.set(u.subarray(0, iend)); out.set(ch, iend); out.set(u.subarray(iend), iend + ch.length); return out; }
+function boundsFromName(name) { const m = {}, t = name.match(/_t(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/), f = name.match(/_f(\d+(?:\.\d+)?)(k?)-(\d+(?:\.\d+)?)(k?)/i);
+  if (t) { m.t0 = +t[1]; m.t1 = +t[2]; } if (f) { m.f0 = +f[1] * (f[2] ? 1000 : 1); m.f1 = +f[3] * (f[4] ? 1000 : 1); } return m; }
+const lvlCache = new Map();
+function pixLevel(d, p) {                                           // magma colour back to 0..1 (grey pictures read as brightness)
+  const r = d[p], g = d[p + 1], b = d[p + 2], a = d[p + 3] / 255;
+  if (Math.abs(r - g) < 8 && Math.abs(g - b) < 8 && r > 8) return (r + g + b) / 765 * a;
+  const key = (r << 16) | (g << 8) | b; let v = lvlCache.get(key);
+  if (v === undefined) { let bd = 1e9, bi = 0; for (let i = 0; i < 256; i++) { const x = LUT[i * 3] - r, y = LUT[i * 3 + 1] - g, z = LUT[i * 3 + 2] - b, dd = x * x + y * y + z * z; if (dd < bd) { bd = dd; bi = i; } } v = bi / 255; lvlCache.set(key, v); }
+  return v * a; }
+function tileMeta() { return { format: 'auragraph-tile', v: '0.3', t0: 0, t1: +secs.toFixed(4), f0: AG_FMIN, f1: AG_FMAX, axis: 'log', bands: AG_NB, db: [-DBR, 0], cmap: 'magma8', src: 'AuraLoom' }; }
+const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 1 : 2) + ' kHz' : Math.round(f) + ' Hz';
+$('tileIn').onchange = async e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
+  let buf; try { buf = await file.arrayBuffer(); } catch (err) { say('Could not read that file.'); return; }
+  const chunk = pngReadMeta(buf), B = { ...boundsFromName(file.name), ...(chunk || {}) };
+  readImage(file, im => { const W = im.naturalWidth, H = im.naturalHeight;
+    const f0 = B.f0 > 0 ? B.f0 : AG_FMIN, f1 = B.f1 > f0 ? B.f1 : AG_FMAX, hasT = B.t1 > B.t0, hasF = B.f0 > 0 && B.f1 > B.f0;
+    stop(); pushUndo();
+    const dur = hasT ? B.t1 - B.t0 : 0;
+    if (hasT) { layout(bpm, bars, 'new', Math.min(120, Math.max(0.5, dur))); showLen(); }
+    const d = pixelsOf(im, W, H), srcDbr = Array.isArray(B.db) ? B.db[1] - B.db[0] : DBR, lg = Math.log(f1 / f0);
+    tone.fill(0); noise.fill(0);
+    for (let c = 0; c < cols; c++) {
+      const x = hasT ? (c + 0.5) * HOP / SR / dur * W - 0.5 : (c + 0.5) / cols * W - 0.5; if (x < -0.5 || x > W - 0.5) continue;
+      const x0 = Math.max(0, Math.min(W - 1, Math.floor(x))), x1 = Math.min(W - 1, x0 + 1), tx = Math.max(0, Math.min(1, x - x0));
+      for (let r = 0; r < NR; r++) { const f = rowFreq(r); if (f < f0 || f > f1) continue;
+        const yb = Math.log(f / f0) / lg * H - 0.5, b0 = Math.max(0, Math.min(H - 1, Math.floor(yb))), b1 = Math.min(H - 1, b0 + 1), ty = Math.max(0, Math.min(1, yb - b0));
+        const at = (xx, bb) => pixLevel(d, ((H - 1 - bb) * W + xx) * 4);
+        let v = (at(x0, b0) * (1 - tx) + at(x1, b0) * tx) * (1 - ty) + (at(x0, b1) * (1 - tx) + at(x1, b1) * tx) * ty;
+        if (srcDbr !== DBR) v = Math.max(0, 1 + (v - 1) * srcDbr / DBR);         // same loudness, our 60 dB range
+        tone[r * cols + c] = v; } }
+    evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched();
+    const from = chunk ? 'its AuraGraph data' : 'its filename';
+    if (hasT || hasF) say('Clip woven in on its real axes (from ' + from + '): ' + (hasT ? B.t0.toFixed(2) + '–' + B.t1.toFixed(2) + ' s, ' : '') + fmtHz(f0) + '–' + fmtHz(f1) + '. Outside that range the loom is silent.' + (hasT && dur < 0.5 ? ' It is shorter than the 0.5 s minimum loop, so the rest is quiet.' : '') + ' Try Stretch ×4 and ▶ to hear it slowly.');
+    else if (H !== AG_NB) say('No bounds in this picture (no AuraGraph data, no _t…_f… in the name), so it is spread over the full 30 Hz–11 kHz. A clip needs its bounds to land on the right notes.');
+    else say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.');
+  }); };
 $('playOrig').onclick = async () => { if (!origBuffer) return; await audio().resume(); stop(); const n = actx.createBufferSource(), b = actx.createBuffer(1, origBuffer.length, SR); b.copyToChannel(origBuffer, 0); n.buffer = b; n.connect(master); n.start(); say('Playing the original recording.'); };
 
 // ================= exports =================
@@ -716,7 +767,8 @@ function tileCanvas() {
       const k = Math.max(0, Math.min(255, Math.round(v * 255))) * 3, p = (y * cols + c) * 4; d[p] = LUT[k]; d[p + 1] = LUT[k + 1]; d[p + 2] = LUT[k + 2]; d[p + 3] = 255; } }
   o.putImageData(im, 0, 0); return oc;
 }
-$('saveTile').onclick = () => { tileCanvas().toBlob(b => download(b, 'auraloom-tile-' + stamp() + '.png')); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
+const tileBytes = () => pngWithMeta(unb64(tileCanvas().toDataURL('image/png').split(',')[1]), tileMeta());
+$('saveTile').onclick = () => { download(new Blob([tileBytes()], { type: 'image/png' }), 'auraloom-tile-' + stamp() + '_t0-' + secs.toFixed(2) + '_f30-11000.aura.png'); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
 };
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
@@ -1019,7 +1071,7 @@ layout(104, 2, 'new');
 })();
 // exports the headless renderer (tools/weave.py) calls
 async function wavB64(seamless) { const blob = await loopWav(!!seamless); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
-window.__loom = { playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+window.__loom = { playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => 'data:image/png;base64,' + b64(tileBytes()), pngReadMeta, loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
 </script>
 </body>
 </html>
