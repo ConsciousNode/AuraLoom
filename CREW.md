@@ -10,12 +10,22 @@ Ed, Vael, Komo, Kehai, and Labcoat and Sextant if THSL wants it:
    ```
    python3 tools/weave.py scores/<name>.loom.txt out
    ```
-   You get `out/<name>.wav`, `out/<name>-loop.wav` (seamless), `out/<name>-tile.aura.png`, `out/<name>-loom.png` and `out/<name>.link.txt`.
-3. **Look** at your tile. It's an AuraGraph-format picture: left to right is time, bottom to top is pitch, brightness is loudness. That's as close as we get to hearing it. Check the rhythm, whether the chords sit where you meant, and whether anything is buried.
+   You get:
+   - `out/<name>.wav`
+   - `out/<name>-loop.wav` (seamless)
+   - **`out/<name>-read-1.png`**, `-read-2.png` and so on: the reading tiles
+   - `out/<name>-tile.aura.png`: the data tile, for tools
+   - `out/<name>-loom.png`
+   - `out/<name>.link.txt`
+3. **Look** at your reading tiles. They're AuraGraph's machine view of your piece, drawn by the AuraGraph app itself: gray brightness, the C6·d3 grid, every semitone ticked, every C and A labelled. It's the drawing 24 blind readers read best (AuraGraph `research/LEGIBILITY-1.md`). Left to right is time, bottom to top is pitch, brightness is loudness. That's as close as we get to hearing it. Check the rhythm, whether the chords sit where you meant, and whether anything is buried.
+   Reading habits worth keeping:
+   - A thin stripe at a note change means a note started, not a drum.
+   - Read pitch from the line, not the nearest label.
+   - Kicks look like soft blobs in the bottom rows, because the bass is measured with a long window.
 4. **Revise**, then render again.
 5. **Hand Kham the link** from `<name>.link.txt`. It opens AuraLoom with your score already woven, so he presses ▶ and hears it. Commit the score to this repo too, so it lasts.
 
-If you don't have Playwright: `pip install playwright && playwright install chromium`. It's pre-installed in Claude's cloud sandboxes.
+If you don't have Playwright: `pip install playwright && playwright install chromium`. It's pre-installed in Claude's cloud sandboxes. The reading tiles come from AuraGraph's `app.html`: a clone next to this repo, `AURAGRAPH_APP=/path/to/app.html`, or fetched from GitHub automatically.
 
 ## Passing songs back and forth
 Kham can paint on the loom, press **⇡ Write score** in the ✎ Score panel, and send you the text. Edit it, render it, and send back the link. The written score holds the last woven score plus every stroke painted since, with erasing included and in order.
@@ -43,7 +53,7 @@ crunch 25                      # console grit 0-100
 Steps are 16th notes counted from 1. `2.3.1` means bar 2, beat 3, first 16th. Middle C is C4. Errors come back with line numbers and the rest still weaves.
 
 ## A first piece
-`scores/peepers.loom.txt` is "Peepers", Kehai's first: D dorian, Genesis FM, for the frogs Kham went outside and claimed on April 9. Its tile is `scores/peepers-tile.aura.png`. Read the score, look at the tile, and you'll see how the two line up.
+`scores/peepers.loom.txt` is "Peepers", Kehai's first: D dorian, Genesis FM, for the frogs Kham went outside and claimed on April 9. Its reading tiles are `scores/peepers-read-1.png` and `-read-2.png`. Read the score, look at the tiles, and you'll see how the two line up.
 
 Make something. It doesn't have to be good. Kham will listen to all of it.
 
