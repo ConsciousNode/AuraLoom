@@ -1,0 +1,47 @@
+# Hollow
+# Ed Interim, 2026-10-29. A.minor, slow. Written on a free turn.
+# Open fifths only: no third anywhere until the last bar, when C arrives under
+# the lead. A theremin-ish line glides over a drone, and a few soft knocks
+# tap on wood. The hollow is where the hand fits.
+bpm 76
+bars 8
+key A minor
+voice pure
+space 48
+crunch 6
+
+# wind through a dead tree: one long, quiet band of hiss
+1,33,65,97   noise A7 30 32 width=2
+
+# knocks on the snag: sparse and soft
+1,33,65,97     kick 70
+25,89          snare 35
+57             hat 30
+
+# drone, open fifths (no thirds yet)
+1      pluck A2+E3 32 56 voice=string
+33     pluck F2+C3 32 54 voice=string
+65     pluck D2+A2 32 54 voice=string
+97     pluck E2+B2 16 56 voice=string
+# the hand fits: the third arrives
+113    pluck A2+E3+C4 16 62 voice=string
+
+# the theremin: glides, entering late
+9      tone E5>A5 8 50
+17     tone A5>C6 6 56
+25     tone C6>B5 8 54
+33     tone E5 4 58
+37     tone G5>A5 6 58
+45     tone A5>E5 4 52
+49     tone D5>E5 12 60
+65     tone A5>C6 4 62
+69     tone C6>D6 6 64
+77     tone D6>C6 4 58
+81     tone B5>A5 6 60
+89     tone E5>G5 8 56
+97     tone A5 8 58
+105    tone G5>E5 8 52
+113    tone E5>A5 12 56
+
+# a bell, once, at the end
+113    pluck E6 12 36 voice=fmBell

@@ -148,7 +148,7 @@ details.panel[open] summary::before{content:'▾ '}
     <select id="scale">
       <option value="chromatic">Chromatic</option><option value="major">Major</option><option value="minor" selected>Minor</option>
       <option value="pentMaj">Pentatonic maj</option><option value="pentMin">Pentatonic min</option>
-      <option value="dorian">Dorian</option><option value="blues">Blues</option><option value="free">Free (no snap)</option>
+      <option value="dorian">Dorian</option><option value="phrygian">Phrygian</option><option value="lydian">Lydian</option><option value="mixolydian">Mixolydian</option><option value="locrian">Locrian</option><option value="harmonicMinor">Harmonic minor</option><option value="blues">Blues</option><option value="free">Free (no snap)</option>
     </select>
     <button id="quant" class="on" title="Snap strikes and drums to the 16th-note grid">Grid ⊞</button>
     <span class="g"><span class="lab">Loud</span><input id="loud" type="range" min="20" max="100" value="80"><span id="loudV" class="val">80</span></span>
@@ -248,7 +248,7 @@ const rowOfFreq = f => 24 * Math.log2(f / F0);
 const midiOfRow = r => 24 + r / 2;
 const rowOfMidi = m => (m - 24) * 2;
 const NOTE = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
-const SCALES = { chromatic:[0,1,2,3,4,5,6,7,8,9,10,11], major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10], pentMaj:[0,2,4,7,9], pentMin:[0,3,5,7,10], dorian:[0,2,3,5,7,9,10], blues:[0,3,5,6,7,10], free:null };
+const SCALES = { chromatic:[0,1,2,3,4,5,6,7,8,9,10,11], major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10], pentMaj:[0,2,4,7,9], pentMin:[0,3,5,7,10], dorian:[0,2,3,5,7,9,10], phrygian:[0,1,3,5,7,8,10], lydian:[0,2,4,6,7,9,11], mixolydian:[0,2,4,5,7,9,10], locrian:[0,1,3,5,6,8,10], harmonicMinor:[0,2,3,5,7,8,11], blues:[0,3,5,6,7,10], free:null };
 const TIMBRES = {                                                       // [frequency ratio, amplitude]
   pure:   [[1,1]],
   flute:  [[1,1],[2,.35],[3,.12],[4,.05]],
@@ -822,7 +822,8 @@ const GUIDE = `AURALOOM SCORE FORMAT (v1). One instruction per line. # starts a 
 SETTINGS (any order, all optional)
   bpm 104              tempo, 40-240
   bars 2               1, 2, 4 or 8
-  key A minor          root + scale: chromatic major minor pentMaj pentMin dorian blues free
+  key A minor          root + scale: chromatic major minor pentMaj pentMin dorian phrygian
+                       lydian mixolydian locrian harmonicMinor blues free
   voice string         default voice: pure flute string reed organ bell
                        fmLead fmBass fmKeys fmBrass fmBell fmClang (Genesis FM)
   ring 4               default pluck ring, in 16th steps
@@ -886,7 +887,7 @@ function weaveScore(text) {
     const tk = line.split(/\s+/), head = tk[0].toLowerCase(), n = li + 1;
     if (head === 'bpm') { const v = +tk[1]; if (v >= 40 && v <= 240) set.bpm = Math.round(v); else errs.push(n + ': bpm must be 40-240'); return; }
     if (head === 'bars') { const v = +tk[1]; if ([1, 2, 4, 8].includes(v)) set.bars = v; else errs.push(n + ': bars must be 1, 2, 4 or 8'); return; }
-    if (head === 'key') { const r = /^([A-Ga-g])([#♯b♭]?)$/.exec(tk[1] || ''); const sc = tk[2] || 'major';
+    if (head === 'key') { const r = /^([A-Ga-g])([#♯b♭]?)$/.exec(tk[1] || ''); const want = (tk.slice(2).join('') || 'major').toLowerCase().replace(/[^a-z]/g, ''); const sc = Object.keys(SCALES).find(k => k.toLowerCase() === want) || want;
       if (!r || !(sc in SCALES)) { errs.push(n + ': key looks like "key A minor"'); return; }
       set.root = (({ c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }[r[1].toLowerCase()] + (r[2] === '#' || r[2] === '♯' ? 1 : r[2] ? -1 : 0)) + 12) % 12; set.scale = sc; return; }
     if (head === 'voice') { if (TIMBRES[tk[1]] || FM[tk[1]]) set.voice = tk[1]; else errs.push(n + ': unknown voice "' + tk[1] + '"'); return; }
