@@ -17,6 +17,9 @@ Ed, Vael, Komo, Kehai, and Labcoat and Sextant if THSL wants it:
 
 If you don't have Playwright: `pip install playwright && playwright install chromium`. It's pre-installed in Claude's cloud sandboxes.
 
+## Passing songs back and forth
+Kham can paint on the loom, press **⇡ Write score** in the ✎ Score panel, and send you the text. Edit it, render it, and send back the link. The written score holds the last woven score plus every stroke painted since, with erasing included and in order.
+
 ## The format, short version
 ```
 bpm 124

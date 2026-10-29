@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  AURALOOM v0.2 — ConsciousNode SoftWorks
+  AURALOOM v0.3 — ConsciousNode SoftWorks
   Weave sound on a loom: pitch threads run across, time runs along, brightness is loudness.
   Paint notes, plucks, drums and noise, then play the picture as a loop.
 
@@ -20,6 +20,10 @@
   share links (#score=), and tools/weave.py so the crew can compose without a screen.
   v0.2.1: Loop WAV (seamless, reverb tail folded over the start); loops are now exactly
   bars × 4 × 60 / bpm long, sample-accurate, so exports stay in step with a DAW.
+  v0.3: ⇡ Write score. Every brush stroke is logged as a score event, so the loom can write
+  itself back out as text (round-trip tested: tone layer identical to within 2 cells). New score
+  syntax: erase, 9.5s off-grid steps, A4q quarter-tones, hat size=, FM tone age=. '#' is a comment
+  only at line start or after a space, so C#5 works.
 -->
 <html lang="en">
 <head>
@@ -181,6 +185,7 @@ details.panel[open] summary::before{content:'▾ '}
   <textarea id="score" spellcheck="false"></textarea>
   <div class="row" style="margin-top:8px">
     <button id="weave" class="play" style="padding:7px 16px">⇣ Weave score</button>
+    <button id="writeScore" title="Write what's on the loom as a score: the woven score plus every stroke painted since">⇡ Write score</button>
     <button id="example">Example</button>
     <button id="copyScore">⧉ Copy</button>
     <button id="share" title="A link that opens AuraLoom with this score already woven">🔗 Share link</button>
@@ -215,12 +220,14 @@ details.panel[open] summary::before{content:'▾ '}
     <li><b>🖼 Picture</b>: reads any image as sound. Top is high, bright is loud. Try a photo, a drawing or your handwriting.</li>
     <li><b>◫ AuraGraph tile</b>: loads a tile made by AuraGraph or Paint-a-Tile using its real pitch axis (30 Hz to 11 kHz), so the notes land where they belong.</li>
   </ul>
+  <h3>Scores (text)</h3>
+  <p>Open <b>✎ Score</b> to write music as text and <b>Weave</b> it, or press <b>⇡ Write score</b> to turn what's on the loom into text: the last woven score plus every stroke you've painted since (erasing included). Edit it, weave it back, or share it as a link. Imported recordings and pictures can't become a score, because a score holds threads, not pictures.</p>
   <h3>Taking things out</h3>
   <p><b>WAV</b> is one pass of the loop with the Space reverb ringing out at the end. <b>Loop WAV</b> is exactly one loop long with that tail already folded over the start, so it repeats without a seam in any player, editor or game engine. <b>PNG</b> is the loom as you see it. <b>Tile</b> is an AuraGraph-format tile any crew member can read. <b>Project</b> saves everything to reopen later.</p>
   <h3>Keys</h3>
   <p><kbd>Space</kbd> play/stop · <kbd>1</kbd>–<kbd>7</kbd> threads · <kbd>[</kbd> <kbd>]</kbd> size · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>G</kbd> Clean/Ghost</p>
   <p>Everything runs on this device. Nothing is uploaded.</p>
-  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.2 · ConsciousNode SoftWorks · named by Kehai, built by Kehai Interim · the playable half of AuraGraph.</p>
+  <p style="font-size:12px;color:var(--dim)">AuraLoom v0.3 · ConsciousNode SoftWorks · named by Kehai, built by Kehai Interim · the playable half of AuraGraph.</p>
 </div></div>
 
 <script>
@@ -394,8 +401,8 @@ function snare(c0, v) {
   for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(260)); r < NR; r++) put(noise, r, c0 + dc, (v * 0.93 - 0.6 * dc / n) * (0.85 + 0.15 * Math.random()));
   for (let dc = 0; dc < 4; dc++) { put(tone, rowOfFreq(185), c0 + dc, v - 0.08 - 0.1 * dc); put(tone, rowOfFreq(330), c0 + dc, v - 0.2 - 0.12 * dc); }
 }
-function hat(c0, v, open) {
-  v = v != null ? v : loudV(); const n = open ? Math.round(0.2 * SR / HOP) : 2 + Math.round(+$('size').value / 3);
+function hat(c0, v, open, size) {
+  v = v != null ? v : loudV(); const n = open ? Math.round(0.2 * SR / HOP) : 2 + Math.round((size != null ? size : +$('size').value) / 3);
   for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(5500)); r < NR; r++) put(noise, r, c0 + dc, (v - 0.25 * dc / n) * (0.9 + 0.1 * Math.random()));
 }
 function smear(rf, c) { const v = loudV() * 0.85, rad = +$('size').value * 2;
@@ -404,17 +411,42 @@ const qc = c => quant ? Math.round(c / stepCols()) * stepCols() : c;
 
 let drawing = false, last = null, strokeC0 = 0, lastStrike = -1e9;
 function toLoom(e) { const rc = cv.getBoundingClientRect(); return { c: Math.max(0, Math.min(cols - 1, (e.clientX - rc.left) / rc.width * cols)), r: (1 - (e.clientY - rc.top) / rc.height) * NR, x: e.clientX - rc.left, y: e.clientY - rc.top }; }
+// ---- the stroke log: every brush stroke is remembered as a score event, so the loom can write itself out as text
+let evlog = [], baseLines = [], imported = false, stroke = null;
+const stepOf = c => c / stepCols() + 1;
 function strokeAt(p, first) {
-  if (brush === 'tone') { const row = snapRow(p.r); stampNote(row, p.c, loudV(), Math.max(0, p.c - strokeC0) * HOP / SR); }
+  if (brush === 'tone') { const row = snapRow(p.r); stampNote(row, p.c, loudV(), Math.max(0, p.c - strokeC0) * HOP / SR); stroke.pts.push({ c: Math.round(p.c), r: row }); }
   else if (brush === 'pluck') { const c = qc(p.c), gap = quant ? stepCols() * 0.99 : stepCols() * 0.5;
-    if (first || Math.abs(c - lastStrike) >= gap) { pluck(snapRow(p.r), Math.round(c)); lastStrike = c; } }
+    if (first || Math.abs(c - lastStrike) >= gap) { const row = snapRow(p.r), cc = Math.round(c); pluck(row, cc); lastStrike = c;
+      evlog.push({ k: 'pluck', s: stepOf(c), m: midiOfRow(row), ring: +$('ring').value, loud: +$('loud').value, voice: voiceName() }); } }
   else if (brush === 'kick' || brush === 'snare' || brush === 'hat') { const c = qc(p.c);
-    if (first || Math.abs(c - lastStrike) >= stepCols() * 0.99) { ({kick, snare, hat})[brush](Math.round(c)); lastStrike = c; } }
-  else if (brush === 'noise') smear(p.r, p.c);
-  else if (brush === 'erase') rub(p.r, p.c, +$('size').value * 1.5);
+    if (first || Math.abs(c - lastStrike) >= stepCols() * 0.99) { const cc = Math.round(c); ({kick, snare, hat})[brush](cc); lastStrike = c;
+      evlog.push({ k: brush, s: stepOf(c), loud: +$('loud').value, size: brush === 'hat' ? +$('size').value : null }); } }
+  else if (brush === 'noise') { smear(p.r, p.c); stroke.pts.push({ c: p.c, r: p.r }); }
+  else if (brush === 'erase') { rub(p.r, p.c, +$('size').value * 1.5); stroke.pts.push({ c: p.c, r: p.r }); }
+}
+function finishStroke() {
+  if (!stroke || !stroke.pts.length) { stroke = null; return; }
+  const sc = stepCols(), pts = stroke.pts, b = stroke.brush;
+  if (b === 'tone') {                                  // runs of one note become tone events
+    let i = 0;
+    while (i < pts.length) { let j = i, lo = pts[i].c, hi = pts[i].c;
+      while (j + 1 < pts.length && pts[j + 1].r === pts[i].r && Math.abs(pts[j + 1].c - pts[j].c) <= 1) { j++; lo = Math.min(lo, pts[j].c); hi = Math.max(hi, pts[j].c); }
+      evlog.push({ k: 'tone', s: stepOf(lo), m: midiOfRow(pts[i].r), len: (hi - lo + 2) / sc, loud: stroke.loud, voice: stroke.voice, age: Math.max(0, lo - stroke.c0) * HOP / SR });
+      i = j + 1; }
+  } else {                                             // noise and erase: one event per stretch of about half a step
+    const chunk = Math.max(1, sc / 2); let a = 0;
+    while (a < pts.length) { let z = a; while (z + 1 < pts.length && Math.abs(pts[z + 1].c - pts[a].c) < chunk) z++;
+      const seg = pts.slice(a, z + 1), lo = Math.min(...seg.map(q => q.c)), hi = Math.max(...seg.map(q => q.c)), r = seg.reduce((x, q) => x + q.r, 0) / seg.length;
+      const m = Math.round(midiOfRow(Math.max(0, Math.min(NR - 1, r))) * 2) / 2;
+      if (b === 'noise') evlog.push({ k: 'noise', s: stepOf(lo), m, len: Math.max(0.25, (hi - lo + 1) / sc), loud: stroke.loud, width: stroke.size * 2 });
+      else evlog.push({ k: 'erase', s: stepOf(lo), m, len: Math.max(0.25, (hi - lo + 1) / sc), width: stroke.size * 1.5 });
+      a = z + 1; }
+  }
+  stroke = null;
 }
 cv.addEventListener('pointerdown', e => {
-  e.preventDefault(); cv.setPointerCapture(e.pointerId); pushUndo(); drawing = true; last = toLoom(e); strokeC0 = last.c; strokeAt(last, true); draw(); touched();
+  e.preventDefault(); cv.setPointerCapture(e.pointerId); pushUndo(); drawing = true; last = toLoom(e); strokeC0 = last.c; stroke = { brush, pts: [], loud: +$('loud').value, voice: voiceName(), size: +$('size').value, c0: Math.round(last.c) }; strokeAt(last, true); draw(); touched();
 });
 cv.addEventListener('pointermove', e => {
   const p = toLoom(e), h = $('hover');
@@ -429,10 +461,10 @@ cv.addEventListener('pointermove', e => {
   } else strokeAt(p, false);
   last = p; draw(); touched();
 });
-const endDraw = () => { drawing = false; };
+const endDraw = () => { if (drawing) { finishStroke(); markStale(); } drawing = false; };
 cv.addEventListener('pointerup', endDraw); cv.addEventListener('pointercancel', endDraw);
 cv.addEventListener('pointerleave', () => { $('hover').style.display = 'none'; });
-function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols }); if (undoStack.length > 40) undoStack.shift(); }
+function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols, ev: evlog.slice(), base: baseLines.slice(), imp: imported }); if (undoStack.length > 40) undoStack.shift(); }
 
 // ================= renderers =================
 // Clean: tone rows → phase-continuous oscillators; noise rows → random-phase spectral noise.
@@ -605,7 +637,7 @@ $('audioIn').onchange = async e => {
         B[r * cols + c] = v; } }
     const sorted = Float32Array.from(B).sort(), ref = sorted[Math.floor(sorted.length * 0.997)] || 1;
     noise.fill(0); for (let i = 0; i < B.length; i++) tone[i] = Math.max(0, Math.min(1, 1 + 20 * Math.log10(Math.max(B[i], 1e-10) / ref) / DBR));
-    setMode('ghost'); draw(); touched();
+    evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched();
     say('“' + file.name + '” is woven in (first ' + secs.toFixed(1) + ' s). Ghost mode is on: ▶ to hear it rebuilt, ▶ Original for the real thing.');
   } catch (err) { say('Could not read that audio: ' + err.message); }
 };
@@ -615,13 +647,13 @@ const lumaAt = (d, p) => (0.2126 * d[p] + 0.7152 * d[p + 1] + 0.0722 * d[p + 2])
 $('imgIn').onchange = e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
   readImage(file, im => { const d = pixelsOf(im, cols, NR); pushUndo(); noise.fill(0);
     for (let y = 0; y < NR; y++) for (let c = 0; c < cols; c++) tone[(NR - 1 - y) * cols + c] = lumaAt(d, (y * cols + c) * 4);
-    setMode('ghost'); draw(); touched(); say('Picture woven in: top = high, bright = loud. Ghost mode is on; ▶ to hear it.'); }); };
+    evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched(); say('Picture woven in: top = high, bright = loud. Ghost mode is on; ▶ to hear it.'); }); };
 $('tileIn').onchange = e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
   readImage(file, im => { const d = pixelsOf(im, cols, AG_NB); pushUndo(); tone.fill(0); noise.fill(0);
     for (let r = 0; r < NR; r++) { const b = agBandOfFreq(rowFreq(r)) - 0.5; if (b < 0 || b > AG_NB - 1) continue;
       const b0 = Math.floor(b), t = b - b0, y0 = AG_NB - 1 - b0, y1 = Math.max(0, y0 - 1);
       for (let c = 0; c < cols; c++) tone[r * cols + c] = lumaAt(d, (y0 * cols + c) * 4) * (1 - t) + lumaAt(d, (y1 * cols + c) * 4) * t; }
-    setMode('ghost'); draw(); touched(); say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.'); }); };
+    evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched(); say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.'); }); };
 $('playOrig').onclick = async () => { if (!origBuffer) return; await audio().resume(); stop(); const n = actx.createBufferSource(), b = actx.createBuffer(1, origBuffer.length, SR); b.copyToChannel(origBuffer, 0); n.buffer = b; n.connect(master); n.start(); say('Playing the original recording.'); };
 
 // ================= exports =================
@@ -687,8 +719,8 @@ NOTE.forEach((n, i) => { const o = document.createElement('option'); o.value = i
 $('root').onchange = $('scale').onchange = () => { bgRow = null; drawAxis(); draw(); };
 $('bpm').onchange = () => { const v = Math.max(40, Math.min(240, Math.round(+$('bpm').value) || bpm)); $('bpm').value = v; if (v === bpm) return; const was = playing; stop(); layout(v, bars, 'stretch'); if (was) play(); };
 $('bars').onchange = () => { const was = playing; stop(); layout(bpm, +$('bars').value, 'keep'); if (was) play(); };
-$('undo').onclick = () => { const u = undoStack.pop(); if (!u) return; if (u.cols !== cols) { say('Undo history was cleared by the tempo or length change.'); return; } tone = u.t; noise = u.n; draw(); touched(); };
-$('clear').onclick = () => { pushUndo(); tone.fill(0); noise.fill(0); draw(); touched(); say('Cleared. (Undo brings it back.)'); };
+$('undo').onclick = () => { const u = undoStack.pop(); if (!u) return; if (u.cols !== cols) { say('Undo history was cleared by the tempo or length change.'); return; } tone = u.t; noise = u.n; evlog = u.ev || []; baseLines = u.base || []; imported = !!u.imp; draw(); touched(); markStale(); };
+$('clear').onclick = () => { pushUndo(); tone.fill(0); noise.fill(0); evlog = []; baseLines = []; imported = false; markStale(); draw(); touched(); say('Cleared. (Undo brings it back.)'); };
 $('helpBtn').onclick = () => $('help-ov').classList.add('on');
 $('help-ov').onclick = e => { if (e.target.id === 'help-ov') $('help-ov').classList.remove('on'); };
 const KEYB = ['tone', 'pluck', 'kick', 'snare', 'hat', 'noise', 'erase'];
@@ -751,14 +783,20 @@ EVENTS:  <where>  <thread>  [note]  [length]  [loud]  [key=value ...]
   where   5            a 16th-note step, counted from 1
           2.3.1        bar.beat.sub
           1,5,9        a list           1-32/2   a range with a stride
-  thread  tone pluck kick snare hat openhat noise
+          9.5s         a step between 16ths (only off-grid strokes need this)
+  thread  tone pluck kick snare hat openhat noise erase
   note    A4  C#5  Bb3                  (middle C = C4, A4 = 440 Hz)
           A3+C4+E4                      a chord
           A4>E5                         a glide (tone only)
+          A4q                           a quarter-tone above A4
   length  in 16th steps (tone: how long it holds, pluck: how long it rings,
           noise: how long it hisses). Defaults: tone 1, pluck = ring, noise 2
   loud    0-100 (default 80)
-  options voice=bell  loud=60  len=4  width=3 (noise height in quarter-tones)
+  options voice=bell  loud=60  len=4  width=3 (noise height / eraser radius, in
+          quarter-tones)  size=3 (hat length)  age=0.4 (FM tone: start the voice's
+          brightness envelope 0.4 s in, so one painted stroke split into notes stays one gesture)
+  erase   rubs out everything in a band: <where> erase <note> <length> width=4.
+          Order matters: it only removes what came before it in the score.
 
 EXAMPLES
   1-32/4   hat 70
@@ -768,14 +806,15 @@ EXAMPLES
   9        tone  E4>G4 8 60 voice=fmBrass
   17       noise C7 4 40 width=6
 
-The score replaces whatever is on the loom. Notes are placed exactly as written
+⇡ Write score turns the loom back into text: the last woven score plus every
+stroke painted since. The score replaces whatever is on the loom. Notes are placed exactly as written
 (no key snapping); the key only lights the rows. Share links carry the score in
 the address, so a crew member can hand Kham a link that plays.`;
 const LOUD = l => 0.35 + 0.65 * Math.max(0, Math.min(100, l)) / 100;
 function parseNote(tok) {
-  const m = /^([A-Ga-g])([#♯b♭]?)(-?\d)$/.exec(tok); if (!m) return null;
+  const m = /^([A-Ga-g])([#♯b♭]?)(-?\d)(q?)$/.exec(tok); if (!m) return null;
   const pc = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }[m[1].toLowerCase()] + (m[2] === '#' || m[2] === '♯' ? 1 : m[2] === 'b' || m[2] === '♭' ? -1 : 0);
-  return (+m[3] + 1) * 12 + pc;
+  return (+m[3] + 1) * 12 + pc + (m[4] ? 0.5 : 0);
 }
 function parseWhere(tok, maxStep) {
   const out = [];
@@ -784,15 +823,16 @@ function parseWhere(tok, maxStep) {
     if ((m = /^(\d+)\.(\d+)(?:\.(\d+))?$/.exec(part))) out.push((+m[1] - 1) * 16 + (+m[2] - 1) * 4 + (m[3] ? +m[3] : 1));
     else if ((m = /^(\d+)-(\d+)(?:\/(\d+))?$/.exec(part))) { const a = +m[1], b = +m[2], k = m[3] ? +m[3] : 1; if (k < 1 || b < a) return null; for (let x = a; x <= b; x += k) out.push(x); }
     else if (/^\d+$/.test(part)) out.push(+part);
+    else if ((m = /^(\d+(?:\.\d+)?)s$/.exec(part))) out.push(+m[1]);
     else return null;
   }
   return out.filter(x => x >= 1 && x <= maxStep);
 }
-const THREADS = ['tone', 'pluck', 'kick', 'snare', 'hat', 'openhat', 'noise'];
+const THREADS = ['tone', 'pluck', 'kick', 'snare', 'hat', 'openhat', 'noise', 'erase'];
 function weaveScore(text) {
-  const lines = text.split(/\r?\n/), errs = [], set = {}, events = [];
+  const lines = text.split(/\r?\n/), errs = [], set = {}, events = [], body = [];
   lines.forEach((raw, li) => {
-    const line = raw.replace(/#.*/, '').trim(); if (!line) return;
+    const line = raw.replace(/(^|\s)#.*/, '').trim(); if (!line) { body.push(raw); return; }
     const tk = line.split(/\s+/), head = tk[0].toLowerCase(), n = li + 1;
     if (head === 'bpm') { const v = +tk[1]; if (v >= 40 && v <= 240) set.bpm = Math.round(v); else errs.push(n + ': bpm must be 40-240'); return; }
     if (head === 'bars') { const v = +tk[1]; if ([1, 2, 4, 8].includes(v)) set.bars = v; else errs.push(n + ': bars must be 1, 2, 4 or 8'); return; }
@@ -806,7 +846,7 @@ function weaveScore(text) {
     if (!THREADS.includes(thread)) { errs.push(n + ': expected "<where> <thread> ...", e.g. "5 snare"'); return; }
     const opts = {}, pos = [];
     for (const t of tk.slice(2)) { const kv = /^(\w+)=(.+)$/.exec(t); if (kv) opts[kv[1].toLowerCase()] = kv[2]; else pos.push(t); }
-    events.push({ n, where: tk[0], thread, pos, opts });
+    events.push({ n, where: tk[0], thread, pos, opts }); body.push(raw);
   });
   const B = set.bars || bars, BP = set.bpm || bpm;
   stop(); $('bpm').value = BP; $('bars').value = B;
@@ -822,7 +862,7 @@ function weaveScore(text) {
     const voice = ev.opts.voice || $('timbre').value;
     if (!TIMBRES[voice] && !FM[voice]) { errs.push(ev.n + ': unknown voice "' + voice + '"'); continue; }
     const nums = ev.pos.filter(t => /^\d+(\.\d+)?$/.test(t)).map(Number), words = ev.pos.filter(t => !/^\d+(\.\d+)?$/.test(t));
-    const isPitched = ev.thread === 'tone' || ev.thread === 'pluck' || ev.thread === 'noise';
+    const isPitched = ev.thread === 'tone' || ev.thread === 'pluck' || ev.thread === 'noise' || ev.thread === 'erase';
     let len = ev.opts.len != null ? +ev.opts.len : isPitched ? nums[0] : undefined;
     let loud = ev.opts.loud != null ? +ev.opts.loud : isPitched ? nums[1] : nums[0];
     const v = LOUD(loud != null && isFinite(loud) ? loud : 80);
@@ -837,14 +877,15 @@ function weaveScore(text) {
       const c0 = colOf(st);
       if (ev.thread === 'kick') kick(c0, v);
       else if (ev.thread === 'snare') snare(c0, v);
-      else if (ev.thread === 'hat') hat(c0, v, false);
+      else if (ev.thread === 'hat') hat(c0, v, false, ev.opts.size != null ? +ev.opts.size : null);
+      else if (ev.thread === 'erase') { const centre = notes ? rowOfMidi(notes[0]) : rowOfMidi(60), w = ev.opts.width != null ? +ev.opts.width : 4, L = Math.max(1, Math.round((len || 1) * sc)); for (let dc = 0; dc < L; dc++) rub(centre, c0 + dc, w); }
       else if (ev.thread === 'openhat') hat(c0, v, true);
       else if (ev.thread === 'pluck') for (const m of notes) pluck(rowOfMidi(m), c0, { ring: len || +$('ring').value, v, voice });
       else if (ev.thread === 'tone') {
         const L = Math.max(1, Math.round((len || 1) * sc) - 1);
         for (let dc = 0; dc < L; dc++) for (let k = 0; k < notes.length; k++) {
           const m = glide ? glide[0] + (glide[1] - glide[0]) * dc / Math.max(1, L - 1) : notes[k];
-          stampNote(rowOfMidi(m), c0 + dc, v, dc * HOP / SR, voice); }
+          stampNote(rowOfMidi(m), c0 + dc, v, dc * HOP / SR + (ev.opts.age != null ? +ev.opts.age : 0), voice); }
       } else if (ev.thread === 'noise') {
         const centre = notes ? rowOfMidi(notes[0]) : rowOfMidi(84), w = ev.opts.width != null ? +ev.opts.width : 4, L = Math.max(1, Math.round((len || 2) * sc));
         for (let dc = 0; dc < L; dc++) for (let dr = -w; dr <= w; dr++) put(noise, centre + dr, c0 + dc, (v - 0.3 * Math.abs(dr) / Math.max(1, w)) * (0.75 + 0.25 * Math.random()));
@@ -855,9 +896,47 @@ function weaveScore(text) {
   if (set.mode) setMode(set.mode);
   draw(); touched();
   errs.sort((x, y) => parseInt(x) - parseInt(y));
+  for (let i = body.length - 1; i >= 0; i--) if (/^# AuraLoom score, written from the loom/.test(body[i]) || /^# Note: this loom also held imported|^# threads, so only what was painted after the import/.test(body[i])) body.splice(i, 1);
+  while (body.length && !body[0].trim()) body.shift(); while (body.length && !body[body.length - 1].trim()) body.pop();
+  baseLines = body; evlog = []; imported = false; stale = false;
   return { woven, errs, bpm: BP, bars: B };
 }
 function pushUndoSafe() { if (tone) pushUndo(); }
+// ---- loom → score: write out the woven score plus everything painted since
+let stale = false;
+function markStale() { stale = true; const box = $('scoreMsg'); if (!box) return;
+  box.innerHTML = ''; const d = document.createElement('div'); d.textContent = '● The loom has changed since this text. Press ⇡ Write score to bring the text up to date.'; d.style.color = 'rgb(245,125,21)'; box.appendChild(d); }
+const NOTE_ASCII = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function noteStr(m) { const mi = Math.floor(m + 1e-6), q = m - mi > 0.25; return NOTE_ASCII[((mi % 12) + 12) % 12] + (Math.floor(mi / 12) - 1) + (q ? 'q' : ''); }
+function whereStr(st) { const r = Math.round(st); return Math.abs(st - r) < 0.02 ? String(r) : (+st.toFixed(2)) + 's'; }
+const num = x => String(+(+x).toFixed(2));
+function evRest(e) {
+  if (e.k === 'kick' || e.k === 'snare') return e.k + ' ' + e.loud;
+  if (e.k === 'hat') return 'hat ' + e.loud + ' size=' + e.size;
+  if (e.k === 'pluck') return 'pluck ' + noteStr(e.m) + ' ' + e.ring + ' ' + e.loud + ' voice=' + e.voice;
+  if (e.k === 'tone') return 'tone ' + noteStr(e.m) + ' ' + num(e.len) + ' ' + e.loud + ' voice=' + e.voice + (FM[e.voice] && e.age > 0.004 ? ' age=' + num(e.age) : '');
+  if (e.k === 'noise') return 'noise ' + noteStr(e.m) + ' ' + num(e.len) + ' ' + e.loud + ' width=' + num(e.width);
+  return 'erase ' + noteStr(e.m) + ' ' + num(e.len) + ' width=' + num(e.width);
+}
+function writeScore() {
+  const scName = $('scale').value, out = [];
+  out.push('# AuraLoom score, written from the loom ' + new Date().toISOString().slice(0, 16).replace('T', ' '));
+  out.push('bpm ' + bpm, 'bars ' + bars, 'key ' + NOTE_ASCII[+$('root').value] + ' ' + scName, 'voice ' + voiceName(), 'ring ' + $('ring').value, 'space ' + $('space').value, 'crunch ' + $('crunch').value, 'mode ' + mode);
+  if (imported) out.push('', '# Note: this loom also held imported audio or a picture. A score can only carry', '# threads, so only what was painted after the import is written here.');
+  if (baseLines.length) out.push('', ...baseLines);
+  if (evlog.length) {
+    out.push('', '# painted on the loom');
+    // group events with identical settings into one line (1,9,17 kick 80), but never move
+    // anything across an erase: what was rubbed out must stay rubbed out
+    let i = 0;
+    while (i < evlog.length) { const isE = evlog[i].k === 'erase'; let j = i; while (j < evlog.length && (evlog[j].k === 'erase') === isE) j++;
+      const groups = new Map();
+      for (const e of evlog.slice(i, j)) { const r = evRest(e); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(e.s); }
+      for (const [r, ss] of groups) { const uniq = [...new Set(ss.map(whereStr))].sort((a, b) => parseFloat(a) - parseFloat(b)); out.push(uniq.join(',').padEnd(14) + ' ' + r); }
+      i = j; }
+  }
+  return out.join('\n') + '\n';
+}
 function showWeave(res, label) {
   const box = $('scoreMsg');
   box.innerHTML = '';
@@ -868,6 +947,8 @@ const toB64url = str => { const u = new TextEncoder().encode(str); let b = ''; f
 const fromB64url = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0))); };
 $('weave').onclick = () => { const res = weaveScore($('score').value); showWeave(res); say('Score woven. ▶ to hear it.'); };
 $('example').onclick = () => { $('score').value = EXAMPLE; };
+$('writeScore').onclick = () => { $('score').value = writeScore(); stale = false;
+  $('scoreMsg').textContent = '✓ Written from the loom: ' + evlog.length + ' painted stroke' + (evlog.length === 1 ? '' : 's') + (baseLines.length ? ' on top of the woven score' : '') + '.' + (imported ? ' (Imported audio and pictures can\'t be written as a score; only painted threads are here.)' : ''); };
 $('copyScore').onclick = async () => { try { await navigator.clipboard.writeText($('score').value); $('scoreMsg').textContent = 'Score copied.'; } catch (e) { $('score').select(); $('scoreMsg').textContent = 'Select-all done; copy with Ctrl+C.'; } };
 $('share').onclick = async () => { const url = location.href.split('#')[0] + '#score=' + toB64url($('score').value);
   try { await navigator.clipboard.writeText(url); $('scoreMsg').textContent = 'Link copied (' + url.length + ' characters). Anyone who opens it gets this score already woven.'; }
@@ -886,7 +967,7 @@ layout(104, 2, 'new');
 })();
 // exports the headless renderer (tools/weave.py) calls
 async function wavB64(seamless) { const blob = await loopWav(!!seamless); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
-window.__loom = { weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+window.__loom = { writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
 </script>
 </body>
 </html>
