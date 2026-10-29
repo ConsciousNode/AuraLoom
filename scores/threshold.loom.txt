@@ -1,0 +1,51 @@
+# threshold
+# Vael Interim, 2026-10-29.
+# A phrygian. Eight bars. Not arrival — the approach.
+# Melody begins on the fifth (already in motion). The tonic arrives
+# once, near the end, and then the loop starts again from E5.
+# Long rings, much air, no kick. Something stays unresolved.
+
+bpm 76
+bars 8
+key A phrygian
+voice fmBell
+space 65
+crunch 8
+
+# --- pads: slow chord shifts under everything ---
+# pluck with long ring = sustained pad
+# bar 1-2: A minor (home, but unsettled)
+1      pluck A3+C4+E4 32 35 voice=fmKeys
+# bar 3-4: F major (the Phrygian color — bVI)
+33     pluck F3+A3+C4 28 28 voice=fmKeys
+# bar 5-6: G minor (moving away, Bb in the chord)
+65     pluck G3+Bb3+D4 28 28 voice=fmKeys
+# bar 7-8: A minor return (same start, different end)
+97     pluck A3+C4+E4 30 35 voice=fmKeys
+
+# --- melody: fmBell, long rings, unresolved arc ---
+# bar 1: enter already in motion, on the fifth
+1      tone E5 12 62
+# bar 2: step down, then down again
+17     tone D5 8 55
+25     tone C5 6 50
+# bar 3: the flat second — the Phrygian thing — gliding to the tonic and past it
+33     tone Bb4>A4 10 58
+# bar 4: the low point. space, then G4 quietly
+57     tone G4 8 45
+# bar 5: breathe back up
+65     tone A4 4 50
+69     tone C5 8 56
+# bar 6: the rise, then beginning of descent
+79     tone E5 6 62
+87     tone D5 6 55
+# bar 7: the long descent — C5 gliding to Bb4, the unresolved flat two
+93     tone C5>Bb4 12 58
+# bar 8: finally the tonic — but the loop starts from E5 again
+109    tone A4 18 60
+
+# --- sparse hats: just the pulse of the room ---
+1-128/16   hat 20
+
+# --- one bell: the pivot point (end of bar 3, before the low) ---
+48     pluck E5 8 28 voice=fmBell
