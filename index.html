@@ -18,6 +18,8 @@
   v0.2 (2026-10-29): Genesis FM voices (2-op FM as Bessel sidebands with moving index, after
   Synth Radio's YM2612 / fm_keys voices), Crunch (console DAC bits), and Scores: music as text,
   share links (#score=), and tools/weave.py so the crew can compose without a screen.
+  v0.2.1: Loop WAV (seamless, reverb tail folded over the start); loops are now exactly
+  bars × 4 × 60 / bpm long, sample-accurate, so exports stay in step with a DAW.
 -->
 <html lang="en">
 <head>
@@ -165,7 +167,8 @@ details.panel[open] summary::before{content:'▾ '}
     <label class="file" title="Load an AuraGraph tile (or a Paint-a-Tile PNG) with its real pitch axis">◫ AuraGraph tile<input id="tileIn" type="file" accept="image/png,image/*"></label>
     <button id="playOrig" disabled title="Play the imported recording for comparison">▶ Original</button>
     <span style="flex:1"></span>
-    <button id="saveWav">⤓ WAV</button>
+    <button id="saveWav" title="One pass of the loop, reverb tail ringing out at the end">⤓ WAV</button>
+    <button id="saveLoop" title="Exactly one loop long, tail folded over the start: loops seamlessly anywhere">⤓ Loop WAV</button>
     <button id="savePng" title="The loom as you see it">⤓ PNG</button>
     <button id="saveTile" title="An AuraGraph-format tile (160 bands, 30 Hz–11 kHz)">⤓ Tile</button>
     <button id="saveProj" title="Save everything to reopen later">⤓ Project</button>
@@ -213,7 +216,7 @@ details.panel[open] summary::before{content:'▾ '}
     <li><b>◫ AuraGraph tile</b>: loads a tile made by AuraGraph or Paint-a-Tile using its real pitch axis (30 Hz to 11 kHz), so the notes land where they belong.</li>
   </ul>
   <h3>Taking things out</h3>
-  <p><b>WAV</b> is one pass of the loop with the Space reverb. <b>PNG</b> is the loom as you see it. <b>Tile</b> is an AuraGraph-format tile any crew member can read. <b>Project</b> saves everything to reopen later.</p>
+  <p><b>WAV</b> is one pass of the loop with the Space reverb ringing out at the end. <b>Loop WAV</b> is exactly one loop long with that tail already folded over the start, so it repeats without a seam in any player, editor or game engine. <b>PNG</b> is the loom as you see it. <b>Tile</b> is an AuraGraph-format tile any crew member can read. <b>Project</b> saves everything to reopen later.</p>
   <h3>Keys</h3>
   <p><kbd>Space</kbd> play/stop · <kbd>1</kbd>–<kbd>7</kbd> threads · <kbd>[</kbd> <kbd>]</kbd> size · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>G</kbd> Clean/Ghost</p>
   <p>Everything runs on this device. Nothing is uploaded.</p>
@@ -299,6 +302,7 @@ const say = t => { $('msg').textContent = t; };
 const levelOf = v => v > 0.001 ? Math.pow(10, (v - 1) * DBR / 20) : 0;     // 0..1 picture level → linear amplitude
 const vOfAmp = a => 1 + 20 * Math.log10(Math.max(a, 1e-9)) / DBR;
 const stepCols = () => cols / (bars * 16);
+const loopLen = () => Math.round(secs * SR);   // exact loop length in samples, so exports stay in sync with a DAW's tempo
 
 function layout(newBpm, newBars, how) {             // how: 'stretch' (tempo change) | 'keep' (bar change) | 'new'
   const oT = tone, oN = noise, oC = cols;
@@ -433,7 +437,7 @@ function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols }
 // ================= renderers =================
 // Clean: tone rows → phase-continuous oscillators; noise rows → random-phase spectral noise.
 function renderClean() {
-  const L = cols * HOP, out = new Float32Array(L);
+  const L = loopLen(), out = new Float32Array(Math.max(L, cols * HOP));
   for (let r = 0; r < NR; r++) {
     const f = rowFreq(r); if (f > SR * 0.47) continue;
     let any = false; for (let c = 0; c < cols; c++) if (tone[r * cols + c] > 0.001) { any = true; break; }
@@ -468,9 +472,10 @@ function renderClean() {
     }
     for (let i = 0; i < L; i++) out[i] += nz[i];
   }
-  for (let i = 0; i < L; i++) out[i] = Math.tanh(out[i] * 0.9);
-  const fade = 64; for (let i = 0; i < fade; i++) { out[i] *= i / fade; out[L - 1 - i] *= i / fade; }
-  return out;
+  const res = out.subarray(0, L);
+  for (let i = 0; i < L; i++) res[i] = Math.tanh(res[i] * 0.9);
+  const fade = 64; for (let i = 0; i < fade; i++) { res[i] *= i / fade; res[L - 1 - i] *= i / fade; }
+  return res.slice();
 }
 // Ghost: the whole picture through Griffin-Lim, as AuraGraph tiles play back.
 async function renderGhost(iters, onProgress) {
@@ -504,7 +509,7 @@ async function renderGhost(iters, onProgress) {
     if (it % 3 === 2) { onProgress && onProgress(it + 1, iters); await new Promise(r => setTimeout(r)); }
   }
   istft();
-  const L = cols * HOP, res = new Float32Array(L), off = (NFFT - HOP) / 2;   // centre the frames on their columns
+  const L = loopLen(), res = new Float32Array(L), off = (NFFT - HOP) / 2;   // centre the frames on their columns
   let peak = 0; for (let i = 0; i < L; i++) { res[i] = out[i + off] || 0; peak = Math.max(peak, Math.abs(res[i])); }
   if (peak > 0) for (let i = 0; i < L; i++) res[i] *= 0.85 / peak;
   const fade = 64; for (let i = 0; i < fade; i++) { res[i] *= i / fade; res[L - 1 - i] *= i / fade; }
@@ -512,7 +517,7 @@ async function renderGhost(iters, onProgress) {
 }
 let dirty = true, rendered = null, rendering = null;
 async function render() {
-  if (!dirty && rendered && rendered.length === cols * HOP) return rendered;
+  if (!dirty && rendered && rendered.length === loopLen()) return rendered;
   if (rendering) { await rendering; if (!dirty) return rendered; }
   dirty = false; $('busy').style.display = 'inline';
   rendering = (async () => {
@@ -627,17 +632,22 @@ function wavBlob(chs, rate) { const n = chs[0].length, nc = chs.length, buf = ne
   v.setUint32(24, rate, true); v.setUint32(28, rate * 2 * nc, true); v.setUint16(32, 2 * nc, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2 * nc, true);
   for (let i = 0, o = 44; i < n; i++) for (let ch = 0; ch < nc; ch++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, chs[ch][i])) * 32767, true);
   return new Blob([buf], { type: 'audio/wav' }); }
-async function loopWav() {
+// seamless: play the loop twice through the reverb and keep the second pass, so the tail of
+// the end already rings over the start, exactly as it does when the loop repeats live
+async function loopWav(seamless) {
   const s = await render(); if (!silentCheck(s)) return null;
-  const sp = +$('space').value / 100, tail = sp > 0 ? 1.6 : 0, n = s.length + Math.round(tail * SR);
+  const sp = +$('space').value / 100, tail = sp > 0 ? 1.6 : 0, n = seamless ? s.length * 2 : s.length + Math.round(tail * SR);
   const off = new OfflineAudioContext(2, n, SR), b = off.createBuffer(1, s.length, SR); b.copyToChannel(s, 0);
-  const src = off.createBufferSource(); src.buffer = b;
+  const src = off.createBufferSource(); src.buffer = b; if (seamless) src.loop = true;
   const g = off.createGain(), dG = off.createGain(), wG = off.createGain(), cv2 = off.createConvolver(); cv2.buffer = makeIR(off, 2.4);
   g.gain.value = +$('vol').value / 100; dG.gain.value = 1 - 0.45 * sp; wG.gain.value = 0.55 * sp;
   src.connect(g); g.connect(dG); g.connect(cv2); cv2.connect(wG); dG.connect(off.destination); wG.connect(off.destination); src.start();
-  const out = await off.startRendering(); return wavBlob([out.getChannelData(0), out.getChannelData(1)], SR);
+  const out = await off.startRendering();
+  if (seamless) return wavBlob([out.getChannelData(0).slice(s.length), out.getChannelData(1).slice(s.length)], SR);
+  return wavBlob([out.getChannelData(0), out.getChannelData(1)], SR);
 }
-$('saveWav').onclick = async () => { const b = await loopWav(); if (!b) { say('Nothing to save yet.'); return; } download(b, 'auraloom-' + stamp() + '.wav'); say('WAV saved: one pass of the loop, with the Space tail.'); };
+$('saveWav').onclick = async () => { const b = await loopWav(false); if (!b) { say('Nothing to save yet.'); return; } download(b, 'auraloom-' + stamp() + '.wav'); say('WAV saved: one pass of the loop, with the Space tail ringing out at the end.'); };
+$('saveLoop').onclick = async () => { const b = await loopWav(true); if (!b) { say('Nothing to save yet.'); return; } download(b, 'auraloom-loop-' + stamp() + '.wav'); say('Loop-ready WAV saved: exactly one loop long, with the reverb tail already folded over the start, so it repeats with no seam in any player or editor.'); };
 $('savePng').onclick = () => cv.toBlob(b => download(b, 'auraloom-' + stamp() + '.png'));
 function tileCanvas() {
   const oc = document.createElement('canvas'); oc.width = cols; oc.height = AG_NB; const o = oc.getContext('2d'), im = o.createImageData(cols, AG_NB), d = im.data;
@@ -875,7 +885,7 @@ layout(104, 2, 'new');
   say('A little loop in A minor is already woven (its score is under ✎ Score). Press ▶ (or Space), then paint your own threads while it plays.');
 })();
 // exports the headless renderer (tools/weave.py) calls
-async function wavB64() { const blob = await loopWav(); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
+async function wavB64(seamless) { const blob = await loopWav(!!seamless); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
 window.__loom = { weaveScore, wavB64, tilePng: () => tileCanvas().toDataURL('image/png'), loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
 </script>
 </body>

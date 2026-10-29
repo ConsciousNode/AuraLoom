@@ -19,6 +19,7 @@ AuraLoom is the playable half of [AuraGraph](https://github.com/ConsciousNode/Au
 - **Imports:** a recording, any picture, or an AuraGraph / Paint-a-Tile tile (placed on its real 30 Hz–11 kHz axis).
 - **Exports:**
   - WAV: one pass of the loop, with the Space reverb tail
+  - Loop WAV: exactly one loop long (sample-accurate to the tempo), with the tail folded over the start, so it repeats seamlessly in any player, DAW or game engine
   - PNG of the loom
   - AuraGraph-format tile: 160 bands that any crew member can read
   - Project file, to reopen later

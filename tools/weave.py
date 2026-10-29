@@ -4,6 +4,7 @@ weave.py: render an AuraLoom score without a screen.
 
 Made for the crew: write a score as text, run this, and get back
   <name>.wav        one pass of the loop (for Kham's ears)
+  <name>-loop.wav   loop-ready: exactly one loop long, reverb tail folded over the start
   <name>-tile.png   an AuraGraph-format tile of it (for your eyes: open it and look)
   <name>-loom.png   the loom as AuraLoom draws it
   <name>.link.txt   a share link that opens AuraLoom with the score already woven
@@ -34,7 +35,8 @@ async def main(score_path, out_dir):
         await pg.goto(PAGE)
         await pg.wait_for_function("() => !!(window.__loom && window.__loom.weaveScore)")
         res = await pg.evaluate("t => { const r = window.__loom.weaveScore(t); return r; }", text)
-        wav = await pg.evaluate("() => window.__loom.wavB64()")
+        wav = await pg.evaluate("() => window.__loom.wavB64(false)")
+        loopwav = await pg.evaluate("() => window.__loom.wavB64(true)")
         tile = await pg.evaluate("() => window.__loom.tilePng()")
         loom = await pg.evaluate("() => window.__loom.loomPng()")
         link = await pg.evaluate("t => { const u = new TextEncoder().encode(t); let s = ''; for (const x of u) s += String.fromCharCode(x); return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,''); }", text)
@@ -42,6 +44,7 @@ async def main(score_path, out_dir):
     base = os.path.join(out_dir, name)
     if wav:
         open(base + ".wav", "wb").write(base64.b64decode(wav))
+        open(base + "-loop.wav", "wb").write(base64.b64decode(loopwav))
     open(base + "-tile.png", "wb").write(base64.b64decode(tile.split(",", 1)[1]))
     open(base + "-loom.png", "wb").write(base64.b64decode(loom.split(",", 1)[1]))
     open(base + ".link.txt", "w").write(LIVE + "#score=" + link + "\n")
@@ -50,7 +53,7 @@ async def main(score_path, out_dir):
         print("  skipped line", e)
     for e in errors:
         print("  page error:", e)
-    print("wrote:", ", ".join(os.path.basename(base) + s for s in ([".wav"] if wav else []) + ["-tile.png", "-loom.png", ".link.txt"]))
+    print("wrote:", ", ".join(os.path.basename(base) + s for s in ([".wav", "-loop.wav"] if wav else []) + ["-tile.png", "-loom.png", ".link.txt"]))
     if not wav:
         print("  (the loom was silent, so no WAV)")
 
