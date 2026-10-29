@@ -31,6 +31,10 @@
   "auragraph" (JSON), with the filename (_t12.3-13.1_f200-800) as fallback. Bounded clips
   import on their real time and pitch axes; colours are read back through the magma LUT
   instead of luma; exported tiles (and weave.py's) carry the chunk.
+  v0.6 (seed 10): pinned notes. Pin thread (8) + # Grid: the C6·d3 grid (A–H across the tile's
+  time, 1–8 up its pitch, then a–h / 1–8 inside a cell) drawn over the loom; notes and questions
+  pinned to spots, with replies; notes keep real seconds/Hz and the exact clicked spot, and ride in
+  the tile chunk and the project file. The tile is exported over its own frame, so a clip stays a clip.
 -->
 <html lang="en">
 <head>
@@ -73,6 +77,15 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
 #axis div.root{color:#67e8f9;font-weight:700}
 #wrap{position:relative;flex:1;height:min(62vh,580px);touch-action:none}
 #cv{width:100%;height:100%;display:block;cursor:crosshair;image-rendering:pixelated;image-rendering:crisp-edges}
+#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#notesPanel .nrow{display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid rgba(255,255,255,.05);font-size:13px}
+#notesPanel .nrow:first-child{border-top:0}
+#notesPanel .nref{font:12px ui-monospace,Menlo,Consolas,monospace;color:#67e8f9;min-width:5.5em}
+#notesPanel .nrow.question .nref{color:#fac127}
+#notesPanel .nwhere{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--dim)}
+#notesPanel .ntext{flex:1;color:var(--text);user-select:text;-webkit-user-select:text}
+#notesPanel input[type=text]{background:#1f1f23;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:6px 8px;font:inherit;font-size:13px}
+#notesPanel button.mini{padding:3px 8px;font-size:12px}
 #head{position:absolute;top:0;bottom:0;width:2px;background:rgb(var(--warm));box-shadow:0 0 8px rgba(var(--warm),.9);display:none;pointer-events:none}
 #hover{position:absolute;pointer-events:none;font:11px ui-monospace,Menlo,Consolas,monospace;background:rgba(9,9,11,.85);border:1px solid var(--line);padding:2px 7px;border-radius:6px;display:none;white-space:nowrap;color:#e4e4e7}
 #status{color:var(--soft);font-size:12.5px;min-height:1.4em;margin-top:9px}
@@ -138,6 +151,8 @@ details.panel[open] summary::before{content:'▾ '}
     <button data-brush="hat" title="Hi-hat (5)">Hat<small>DRUM</small></button>
     <button data-brush="noise" title="A soft smear of noise: breath, wind, hiss (6)">Noise<small>WEFT</small></button>
     <button data-brush="erase" title="Unpick threads (7)">Erase<small>UNPICK</small></button>
+    <button data-brush="pin" title="Pin a note to a spot: click the loom, then type in the Notes panel. Paints nothing (8)">Pin<small>NOTE</small></button>
+    <button id="gridBtn" title="Show the C6·d3 grid over the loom (it lives on the screen, not in the sound)"># Grid</button>
   </div>
 
   <div class="row">
@@ -164,7 +179,7 @@ details.panel[open] summary::before{content:'▾ '}
 <div class="panel" style="padding:12px">
   <div id="stage">
     <div id="axis"></div>
-    <div id="wrap"><canvas id="cv"></canvas><div id="head"></div><div id="hover"></div></div>
+    <div id="wrap"><canvas id="cv"></canvas><canvas id="ov"></canvas><div id="head"></div><div id="hover"></div></div>
   </div>
   <div class="legend">
     <span><span class="sw" style="background:linear-gradient(90deg,#651569,#d44842,#fac127)"></span>tone threads (warp)</span>
@@ -190,6 +205,23 @@ details.panel[open] summary::before{content:'▾ '}
   </div>
   <div id="status"><span id="busy">● weaving… </span><span id="msg"></span></div>
 </div>
+<details class="panel" id="notesPanel" open>
+  <summary><b>📌 Notes</b> <span class="tag" id="notesTag">· pin notes to spots on the sound: for the crew to read, or from them to you</span></summary>
+  <div class="row" style="margin-top:10px">
+    <input id="noteRef" type="text" placeholder="C6·d3" style="width:7.5em" title="Where: a grid spot (columns A–H across, rows 1–8 up; then a–h, 1–8 inside the cell). Pick the Pin thread and click the loom to fill it in">
+    <select id="noteKind"><option value="note">note</option><option value="question">question</option><option value="answer">answer</option></select>
+    <input id="noteBy" type="text" value="Kham" style="width:6.5em" title="Who's writing">
+    <input id="noteText" type="text" placeholder="cowbell here · she breathes · the bass drops out" style="flex:1;min-width:14em">
+    <button id="notePin" class="play" style="padding:7px 14px">📌 Pin</button>
+  </div>
+  <div id="noteRe" class="tag" style="margin-top:6px;display:none"></div>
+  <div id="noteList" style="margin-top:8px"></div>
+  <div class="row" style="margin-top:8px">
+    <button id="notesCopy" title="Copy the notes as text, for pasting into a chat with the crew">⧉ Copy as text</button>
+    <button id="notesClear">Clear notes</button>
+    <span class="tag">Notes ride inside ⤓ Tile and ⤓ Project, and come back in when a tile is opened.</span>
+  </div>
+</details>
 <details class="panel" id="scorePanel">
   <summary><b>✎ Score</b> <span class="tag">· write music as text and weave it onto the loom (made for the crew, fine for anyone who'd rather type)</span></summary>
   <textarea id="score" spellcheck="false"></textarea>
@@ -232,6 +264,8 @@ details.panel[open] summary::before{content:'▾ '}
   </ul>
   <h3>Scores (text)</h3>
   <p>Open <b>✎ Score</b> to write music as text and <b>Weave</b> it, or press <b>⇡ Write score</b> to turn what's on the loom into text: the last woven score plus every stroke you've painted since (erasing included). Edit it, weave it back, or share it as a link. Imported recordings and pictures can't become a score, because a score holds threads, not pictures.</p>
+  <h3>Pinned notes and the grid</h3>
+  <p><b>Pin</b> (8) paints nothing. Click a spot on the loom and its grid reference appears in the 📌 Notes panel; type and press Enter. The grid is <b>A–H</b> across the time and <b>1–8</b> up the pitch, and each cell splits again into <b>a–h</b> and <b>1–8</b>, so <code>C6·d3</code> is one small spot. Every note also keeps its real seconds and Hz. <b>Questions</b> are gold and notes are cyan. <b>↳ Reply</b> answers one. Notes ride inside ⤓ Tile and ⤓ Project, so when a crew member opens the tile they get them, and the notes on a tile someone hands you appear on the loom. <b># Grid</b> shows the grid over the loom; it's on the screen only, never in the sound.</p>
   <h3>Stretch and slow listening</h3>
   <p><b>Stretch ×</b> widens (above 1) or pinches (below 1) the whole loom in time. Pitch never moves, so it's a lens for looking at a sound's shape in slow motion: the rivers of its harmonics, the valleys between them, how the energy pours in at an attack and drains away. Painted threads are redrawn sharp at the new tempo; imported pictures and recordings are resampled, and past ×4 that fills in between the columns rather than adding detail. Loops can run from 0.5 s to 120 s. <b>Undo</b> takes it back.</p>
   <p><b>Listen</b> plays the loop at ½, ¼ or ⅛ speed with the pitch unchanged, without touching the loom. Changing <b>BPM</b> on painted work re-weaves it from its threads, so nothing blurs.</p>
@@ -333,13 +367,14 @@ function stretchArr(A, C, C2) {                      // resample along time only
   return out;
 }
 function layout(newBpm, newBars, how, forceSecs) {  // how: 'stretch' (resample in time) | 'keep' (crop/extend) | 'new'
-  const oT = tone, oN = noise, oC = cols;
+  const oT = tone, oN = noise, oC = cols, oS = secs;
   bpm = newBpm; bars = newBars; freeSecs = forceSecs || null; secs = freeSecs || bars * 4 * 60 / bpm;
   cols = Math.round(secs * SR / HOP);
-  if (oT && how === 'stretch') { tone = stretchArr(oT, oC, cols); noise = stretchArr(oN, oC, cols); }
+  if (oT && how === 'stretch') { tone = stretchArr(oT, oC, cols); noise = stretchArr(oN, oC, cols); if (oS > 0 && window.__notesReady) frameK *= secs / oS; }
   else { tone = new Float32Array(NR * cols); noise = new Float32Array(NR * cols);
     if (oT && how === 'keep') for (let r = 0; r < NR; r++) for (let c = 0; c < Math.min(cols, oC); c++) { tone[r * cols + c] = oT[r * oC + c]; noise[r * cols + c] = oN[r * oC + c]; } }
   cv.width = cols; cv.height = NR; img = null; bgCol = null; drawAxis(); draw(); dirty = true;
+  if (window.__notesReady) renderNotes();
 }
 
 // ================= key / scale =================
@@ -384,6 +419,7 @@ function draw() {
       d[p] = R > 255 ? 255 : R; d[p + 1] = G > 255 ? 255 : G; d[p + 2] = B > 255 ? 255 : B; d[p + 3] = 255;
     } }
   ctx.putImageData(img, 0, 0);
+  if (window.__notesReady) drawOv();
 }
 function drawAxis() {
   const ax = $('axis'); ax.innerHTML = ''; const root = +$('root').value;
@@ -465,6 +501,9 @@ function finishStroke() {
   stroke = null;
 }
 cv.addEventListener('pointerdown', e => {
+  if (brush === 'pin') { e.preventDefault(); const p = toLoom(e), F = frame(), t = F.t0 + p.c / cols * (F.t1 - F.t0), f = rowFreq(Math.max(0, Math.min(NR - 1, p.r - 0.5)));
+    if (f < F.f0 || f > F.f1) { say('That spot is outside the tile (' + fmtHz(F.f0) + '–' + fmtHz(F.f1) + ').'); return; }
+    $('noteRef').value = pointRef(t, f, F); pinPt = { ref: $('noteRef').value, pt: [t, f] }; $('notesPanel').open = true; $('noteText').focus(); say('Spot ' + $('noteRef').value + ' (' + t.toFixed(2) + ' s, ~' + nameOfHz(f) + '). Type the note and press Enter.'); return; }
   e.preventDefault(); cv.setPointerCapture(e.pointerId); pushUndo(); drawing = true; last = toLoom(e); strokeC0 = last.c; stroke = { brush, pts: [], loud: +$('loud').value, voice: voiceName(), size: +$('size').value, c0: Math.round(last.c) }; strokeAt(last, true); draw(); touched();
 });
 cv.addEventListener('pointermove', e => {
@@ -473,6 +512,7 @@ cv.addEventListener('pointermove', e => {
   const rr = Math.max(0, Math.min(NR - 1, Math.round(p.r)));
   h.style.display = 'block'; h.style.left = Math.min(p.x + 14, cv.clientWidth - 150) + 'px'; h.style.top = Math.max(p.y - 26, 0) + 'px';
   h.textContent = bar + '.' + beat + '.' + s16 + ' · ' + noteName(brush === 'tone' || brush === 'pluck' ? snapRow(p.r) : rr) + ' · ' + Math.round(rowFreq(rr)) + ' Hz';
+  if (showGrid || brush === 'pin') { const F = frame(), t = F.t0 + p.c / cols * (F.t1 - F.t0), f = rowFreq(Math.max(0, Math.min(NR - 1, p.r - 0.5))); if (f >= F.f0 && f <= F.f1) h.textContent += ' · ' + pointRef(t, f, F) + ' · ' + t.toFixed(2) + ' s'; }
   if (!drawing) return;
   if (brush === 'tone' || brush === 'noise' || brush === 'erase') {
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(p.c - last.c), Math.abs(p.r - last.r))));
@@ -483,7 +523,7 @@ cv.addEventListener('pointermove', e => {
 const endDraw = () => { if (drawing) { finishStroke(); markStale(); } drawing = false; };
 cv.addEventListener('pointerup', endDraw); cv.addEventListener('pointercancel', endDraw);
 cv.addEventListener('pointerleave', () => { $('hover').style.display = 'none'; });
-function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols, secs, freeSecs, bpm, bars, ev: evlog.slice(), base: baseLines.slice(), imp: imported }); if (undoStack.length > 40) undoStack.shift(); }
+function pushUndo() { undoStack.push({ t: tone.slice(), n: noise.slice(), cols, secs, freeSecs, bpm, bars, ev: evlog.slice(), base: baseLines.slice(), imp: imported, fb: tileB && { ...tileB }, fk: frameK }); if (undoStack.length > 40) undoStack.shift(); }
 
 // ================= renderers =================
 // Clean: tone rows → phase-continuous oscillators; noise rows → random-phase spectral noise.
@@ -654,7 +694,7 @@ $('audioIn').onchange = async e => {
   say('Weaving ' + file.name + '…');
   try {
     const x = await decodeToLoop(file); origBuffer = x; $('playOrig').disabled = false;
-    pushUndo();
+    pushUndo(); tileB = null; frameK = 1; notes = []; renderNotes();
     const M = new Float32Array(cols * NBIN), re = new Float64Array(NFFT), im = new Float64Array(NFFT);
     for (let c = 0; c < cols; c++) { const base = c * HOP - (NFFT - HOP) / 2;
       for (let i = 0; i < NFFT; i++) { const j = base + i; re[i] = (j >= 0 && j < x.length ? x[j] : 0) * win[i]; im[i] = 0; }
@@ -705,8 +745,77 @@ function pixLevel(d, p) {                                           // magma col
   const key = (r << 16) | (g << 8) | b; let v = lvlCache.get(key);
   if (v === undefined) { let bd = 1e9, bi = 0; for (let i = 0; i < 256; i++) { const x = LUT[i * 3] - r, y = LUT[i * 3 + 1] - g, z = LUT[i * 3 + 2] - b, dd = x * x + y * y + z * z; if (dd < bd) { bd = dd; bi = i; } } v = bi / 255; lvlCache.set(key, v); }
   return v * a; }
-function tileMeta() { return { format: 'auragraph-tile', v: '0.3', t0: 0, t1: +secs.toFixed(4), f0: AG_FMIN, f1: AG_FMAX, axis: 'log', bands: AG_NB, db: [-DBR, 0], cmap: 'magma8', src: 'AuraLoom' }; }
+function tileMeta() { const F = frame(), m = { format: 'auragraph-tile', v: '0.3', t0: +F.t0.toFixed(4), t1: +F.t1.toFixed(4), f0: +F.f0.toFixed(3), f1: +F.f1.toFixed(3), axis: 'log', bands: AG_NB, db: [-DBR, 0], cmap: 'magma8', src: 'AuraLoom' };
+  if (notes.length) m.notes = notes; return m; }
 const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 1 : 2) + ' kHz' : Math.round(f) + ' Hz';
+
+// ================= pinned notes (seed 10) and the C6·d3 grid (seed 10a) =================
+// The grid divides the *tile's* frame: A–H across its time, 1–8 up its pitch (log), then a–h / 1–8 inside a cell.
+// Notes keep real seconds and Hz too, so "C6·d3" and "12.3 s around A4" always agree.
+let tileB = null, frameK = 1, notes = [], showGrid = false, replyTo = null;   // frameK: loom seconds per real second (Stretch)
+function frame() { const b = tileB || { t0: 0, f0: AG_FMIN, f1: AG_FMAX }; return { t0: b.t0, t1: b.t0 + secs / frameK, f0: b.f0, f1: b.f1 }; }
+const GC = 'abcdefgh';
+function parseRef(ref) { const toks = [...String(ref).matchAll(/([A-Ha-h])\s*([1-8])/g)];
+  if (!toks.length || String(ref).replace(/[A-Ha-h]\s*[1-8]|[\s·.:\/-]/g, '')) return null; return toks.map(m => [GC.indexOf(m[1].toLowerCase()), +m[2] - 1]); }
+const fmtRef = lv => lv.map(([c, r], k) => (k ? GC[c] : GC[c].toUpperCase()) + (r + 1)).join('·');
+function refBox(lv, F) { const n = Math.pow(8, lv.length); let ci = 0, ri = 0; for (const [c, r] of lv) { ci = ci * 8 + c; ri = ri * 8 + r; }
+  const t = i => F.t0 + i / n * (F.t1 - F.t0), f = j => F.f0 * Math.pow(F.f1 / F.f0, j / n); return [t(ci), t(ci + 1), f(ri), f(ri + 1)]; }
+function pointRef(t, f, F, levels = 2) { const n = Math.pow(8, levels);
+  const ci = Math.max(0, Math.min(n - 1, Math.floor((t - F.t0) / (F.t1 - F.t0) * n))), ri = Math.max(0, Math.min(n - 1, Math.floor(Math.log(f / F.f0) / Math.log(F.f1 / F.f0) * n)));
+  const lv = []; for (let k = levels - 1; k >= 0; k--) lv.push([Math.floor(ci / Math.pow(8, k)) % 8, Math.floor(ri / Math.pow(8, k)) % 8]); return fmtRef(lv); }
+const NOTE12 = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const nameOfHz = f => { const m = Math.round(69 + 12 * Math.log2(f / 440)); return NOTE12[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); };
+const whereOf = n => n.t0.toFixed(2) + '–' + n.t1.toFixed(2) + ' s, ' + fmtHz(n.f0) + '–' + fmtHz(n.f1) + (n.pt ? ' · at ' + n.pt[0].toFixed(2) + ' s, ' + fmtHz(n.pt[1]) + ' (' + nameOfHz(n.pt[1]) + ')' : ' (~' + nameOfHz(Math.sqrt(n.f0 * n.f1)) + ')');
+let pinPt = null;                                    // the exact spot clicked, kept alongside its cell
+function addNote(ref, text, kind = 'note', by = 'Kham', re = null, pt = null) {
+  const lv = parseRef(ref); if (!lv) return null; const [t0, t1, f0, f1] = refBox(lv, frame());
+  const n = { n: Math.max(0, ...notes.map(x => x.n)) + 1, ref: fmtRef(lv), t0: +t0.toFixed(4), t1: +t1.toFixed(4), f0: +f0.toFixed(2), f1: +f1.toFixed(2), by, kind, text, when: new Date().toISOString().slice(0, 16) };
+  if (re) n.re = re; if (pt) n.pt = [+pt[0].toFixed(3), +pt[1].toFixed(1)]; notes.push(n); renderNotes(); drawOv(); return n; }
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function renderNotes() {
+  const L = $('noteList'); if (!L) return;
+  $('notesTag').textContent = notes.length ? '· ' + notes.length + ' pinned on ' + frame().t0.toFixed(2) + '–' + frame().t1.toFixed(2) + ' s, ' + fmtHz(frame().f0) + '–' + fmtHz(frame().f1) : '· pin notes to spots on the sound: for the crew to read, or from them to you';
+  L.innerHTML = notes.length ? notes.map(n => '<div class="nrow ' + (n.kind || 'note') + '" data-n="' + n.n + '"><span class="nref">#' + n.n + ' ' + esc(n.ref) + '</span><span class="ntext"><b>' + esc(n.by || '?') + '</b> · ' + esc(n.kind || 'note') + (n.re ? ' re #' + n.re : '') + ': ' + esc(n.text) + '<br><span class="nwhere">' + whereOf(n) + '</span></span><button class="mini" data-reply="' + n.n + '">↳ Reply</button><button class="mini" data-del="' + n.n + '">✕</button></div>').join('')
+    : '<div class="tag">No notes yet. Pick the <b>Pin</b> thread (8) and click the loom, or type a spot like C6·d3.</div>'; }
+function notesText() { const F = frame();
+  return '# Notes\nTile: ' + F.t0.toFixed(2) + '–' + F.t1.toFixed(2) + ' s, ' + fmtHz(F.f0) + '–' + fmtHz(F.f1) + '. Grid: A–H left to right, 1–8 bottom to top; sub-cells a–h, 1–8.\n\n' +
+    notes.map(n => '- #' + n.n + ' ' + n.ref + ' (' + (n.kind || 'note') + ', ' + (n.by || '?') + (n.re ? ', re #' + n.re : '') + ') — ' + whereOf(n) + ': ' + n.text).join('\n') + '\n'; }
+const ov = $('ov'), octx = ov.getContext('2d');
+function drawOv() {
+  const W = ov.clientWidth, H = ov.clientHeight, dpr = window.devicePixelRatio || 1; if (!W || !H) return;
+  if (ov.width !== Math.round(W * dpr) || ov.height !== Math.round(H * dpr)) { ov.width = Math.round(W * dpr); ov.height = Math.round(H * dpr); }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0); octx.clearRect(0, 0, W, H);
+  const F = frame(), X = t => (t - F.t0) / (F.t1 - F.t0) * W, Y = f => (1 - (rowOfFreq(f) + 0.5) / NR) * H;
+  if (showGrid || brush === 'pin') {
+    octx.font = '11px ui-monospace,Menlo,Consolas,monospace'; octx.textBaseline = 'top';
+    for (let i = 0; i <= 64; i++) { const major = i % 8 === 0, x = X(F.t0 + i / 64 * (F.t1 - F.t0)), y = Y(F.f0 * Math.pow(F.f1 / F.f0, i / 64));
+      if (major || W / 64 > 12) { octx.strokeStyle = major ? 'rgba(255,255,255,.32)' : 'rgba(255,255,255,.08)'; octx.beginPath(); octx.moveTo(x + .5, 0); octx.lineTo(x + .5, H); octx.stroke(); }
+      if (major || H / 64 > 12) { octx.strokeStyle = major ? 'rgba(255,255,255,.32)' : 'rgba(255,255,255,.08)'; octx.beginPath(); octx.moveTo(0, y + .5); octx.lineTo(W, y + .5); octx.stroke(); } }
+    octx.fillStyle = 'rgba(228,228,231,.85)';
+    for (let k = 0; k < 8; k++) { octx.fillText('ABCDEFGH'[k], X(F.t0 + (k + 0.5) / 8 * (F.t1 - F.t0)) - 3, 3);
+      const y = Y(F.f0 * Math.pow(F.f1 / F.f0, (k + 0.5) / 8)); if (y > 2 && y < H - 12) octx.fillText(String(k + 1), 4, y - 6); } }
+  const spots = new Map(); for (const n of notes) { const key = [n.t0, n.t1, n.f0, n.f1].join(); if (!spots.has(key)) spots.set(key, []); spots.get(key).push(n); }
+  octx.font = 'bold 11px ui-monospace,Menlo,Consolas,monospace'; octx.textBaseline = 'bottom'; octx.lineWidth = 2;
+  for (const g of spots.values()) { const n = g[0], x0 = X(n.t0), x1 = X(n.t1), y0 = Y(n.f1), y1 = Y(n.f0);
+    const q = g.some(m => m.kind === 'question') && !g.some(m => m.kind === 'answer'), col = q ? '#fac127' : '#67e8f9';
+    octx.strokeStyle = col; octx.fillStyle = col; octx.strokeRect(x0, y0, Math.max(4, x1 - x0), Math.max(4, y1 - y0)); octx.fillText('#' + g.map(m => m.n).join(','), x0 + 1, y0 - 1); }
+  octx.lineWidth = 1; }
+window.addEventListener('resize', () => drawOv());
+$('gridBtn').onclick = () => { showGrid = !showGrid; $('gridBtn').classList.toggle('on', showGrid); drawOv(); };
+$('notePin').onclick = () => { const ref = $('noteRef').value.trim(), text = $('noteText').value.trim();
+  if (!parseRef(ref)) { say('Where should it go? Type a spot like C6 or C6·d3, or pick the Pin thread and click the loom.'); return; }
+  if (!text) { say('Write the note first.'); $('noteText').focus(); return; }
+  const pt = pinPt && pinPt.ref === ref ? pinPt.pt : null, n = addNote(ref, text, $('noteKind').value, $('noteBy').value.trim() || 'Kham', replyTo, pt); pinPt = null;
+  try { localStorage.setItem('auraloom.by', n.by); } catch (e) {}
+  $('noteText').value = ''; replyTo = null; $('noteRe').style.display = 'none'; say('Pinned #' + n.n + ' at ' + n.ref + ': ' + whereOf(n) + '.'); };
+$('noteText').addEventListener('keydown', e => { if (e.key === 'Enter') $('notePin').click(); });
+$('noteList').onclick = e => { const del = e.target.dataset.del, rep_ = e.target.dataset.reply;
+  if (del) { notes = notes.filter(n => n.n !== +del); renderNotes(); drawOv(); }
+  if (rep_) { const n = notes.find(x => x.n === +rep_); replyTo = n.n; $('noteRef').value = n.ref; $('noteKind').value = 'answer'; $('noteRe').textContent = '↳ replying to #' + n.n + ' (' + n.by + '): ' + n.text; $('noteRe').style.display = 'block'; $('noteText').focus(); } };
+$('notesCopy').onclick = () => { const t = notesText(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => say('Notes copied as text.'), () => say('Could not reach the clipboard; the notes are in ⤓ Tile and ⤓ Project.')); };
+$('notesClear').onclick = () => { if (!notes.length) return; window.__lastNotes = notes; notes = []; renderNotes(); drawOv(); say('Notes cleared.'); };
+try { const by = localStorage.getItem('auraloom.by'); if (by) $('noteBy').value = by; } catch (e) {}
+window.__notesReady = true; renderNotes();
 $('tileIn').onchange = async e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
   let buf; try { buf = await file.arrayBuffer(); } catch (err) { say('Could not read that file.'); return; }
   const chunk = pngReadMeta(buf), B = { ...boundsFromName(file.name), ...(chunk || {}) };
@@ -715,6 +824,7 @@ $('tileIn').onchange = async e => { const file = e.target.files[0]; if (!file) r
     stop(); pushUndo();
     const dur = hasT ? B.t1 - B.t0 : 0;
     if (hasT) { layout(bpm, bars, 'new', Math.min(120, Math.max(0.5, dur))); showLen(); }
+    frameK = 1; tileB = (hasT || hasF) ? { t0: hasT ? B.t0 : 0, f0, f1 } : null; notes = Array.isArray(B.notes) ? B.notes : []; renderNotes();
     const d = pixelsOf(im, W, H), srcDbr = Array.isArray(B.db) ? B.db[1] - B.db[0] : DBR, lg = Math.log(f1 / f0);
     tone.fill(0); noise.fill(0);
     for (let c = 0; c < cols; c++) {
@@ -728,7 +838,8 @@ $('tileIn').onchange = async e => { const file = e.target.files[0]; if (!file) r
         tone[r * cols + c] = v; } }
     evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched();
     const from = chunk ? 'its AuraGraph data' : 'its filename';
-    if (hasT || hasF) say('Clip woven in on its real axes (from ' + from + '): ' + (hasT ? B.t0.toFixed(2) + '–' + B.t1.toFixed(2) + ' s, ' : '') + fmtHz(f0) + '–' + fmtHz(f1) + '. Outside that range the loom is silent.' + (hasT && dur < 0.5 ? ' It is shorter than the 0.5 s minimum loop, so the rest is quiet.' : '') + ' Try Stretch ×4 and ▶ to hear it slowly.');
+    drawOv(); const nn = notes.length ? ' ' + notes.length + ' pinned note' + (notes.length > 1 ? 's' : '') + ' came with it.' : '';
+    if (hasT || hasF) say('Clip woven in on its real axes (from ' + from + '): ' + (hasT ? B.t0.toFixed(2) + '–' + B.t1.toFixed(2) + ' s, ' : '') + fmtHz(f0) + '–' + fmtHz(f1) + '. Outside that range the loom is silent.' + (hasT && dur < 0.5 ? ' It is shorter than the 0.5 s minimum loop, so the rest is quiet.' : '') + ' Try Stretch ×4 and ▶ to hear it slowly.' + nn);
     else if (H !== AG_NB) say('No bounds in this picture (no AuraGraph data, no _t…_f… in the name), so it is spread over the full 30 Hz–11 kHz. A clip needs its bounds to land on the right notes.');
     else say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.');
   }); };
@@ -761,20 +872,21 @@ $('saveLoop').onclick = async () => { const b = await loopWav(true); if (!b) { s
 $('savePng').onclick = () => cv.toBlob(b => download(b, 'auraloom-' + stamp() + '.png'));
 function tileCanvas() {
   const oc = document.createElement('canvas'); oc.width = cols; oc.height = AG_NB; const o = oc.getContext('2d'), im = o.createImageData(cols, AG_NB), d = im.data;
-  for (let b = 0; b < AG_NB; b++) { const f = AG_FMIN * Math.pow(AG_FMAX / AG_FMIN, (b + 0.5) / AG_NB), rf = rowOfFreq(f), y = AG_NB - 1 - b;
+  const F = frame();                                   // the tile covers the frame, so a clip exports as a clip and its grid stays put
+  for (let b = 0; b < AG_NB; b++) { const f = F.f0 * Math.pow(F.f1 / F.f0, (b + 0.5) / AG_NB), rf = rowOfFreq(f), y = AG_NB - 1 - b;
     for (let c = 0; c < cols; c++) { let v = 0;
       if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * cols + c; v = Math.max(tone[i0], noise[i0]) * (1 - t) + Math.max(tone[i0 + cols], noise[i0 + cols]) * t; }
       const k = Math.max(0, Math.min(255, Math.round(v * 255))) * 3, p = (y * cols + c) * 4; d[p] = LUT[k]; d[p + 1] = LUT[k + 1]; d[p + 2] = LUT[k + 2]; d[p + 3] = 255; } }
   o.putImageData(im, 0, 0); return oc;
 }
 const tileBytes = () => pngWithMeta(unb64(tileCanvas().toDataURL('image/png').split(',')[1]), tileMeta());
-$('saveTile').onclick = () => { download(new Blob([tileBytes()], { type: 'image/png' }), 'auraloom-tile-' + stamp() + '_t0-' + secs.toFixed(2) + '_f30-11000.aura.png'); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
+$('saveTile').onclick = () => { download(new Blob([tileBytes()], { type: 'image/png' }), 'auraloom-tile-' + stamp() + '_t' + frame().t0.toFixed(2) + '-' + frame().t1.toFixed(2) + '_f' + Math.round(frame().f0) + '-' + Math.round(frame().f1) + '.aura.png'); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
 };
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
 const q8 = L => Uint8Array.from(L, v => Math.round(v * 255));
 $('saveProj').onclick = () => {
-  const p = { app: 'AuraLoom', v: 1, bpm, bars, cols, freeSecs, rows: NR, root: +$('root').value, scale: $('scale').value, timbre: $('timbre').value, mode, space: +$('space').value, tone: b64(q8(tone)), noise: b64(q8(noise)) };
+  const p = { app: 'AuraLoom', v: 1, bpm, bars, cols, freeSecs, rows: NR, root: +$('root').value, scale: $('scale').value, timbre: $('timbre').value, mode, space: +$('space').value, tone: b64(q8(tone)), noise: b64(q8(noise)), tileB, frameK, notes };
   download(new Blob([JSON.stringify(p)], { type: 'application/json' }), 'auraloom-' + stamp() + '.auraloom.json'); say('Project saved.');
 };
 $('projIn').onchange = async e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
@@ -782,6 +894,7 @@ $('projIn').onchange = async e => { const file = e.target.files[0]; if (!file) r
     stop(); $('bpm').value = p.bpm; $('bars').value = p.bars; $('root').value = p.root; $('scale').value = p.scale; $('timbre').value = p.timbre || 'string'; $('space').value = p.space ?? 22;
     layout(p.bpm, p.bars, 'new', p.freeSecs || null); if (p.cols !== cols) throw new Error('size mismatch'); showLen();
     const T = unb64(p.tone), N = unb64(p.noise); for (let i = 0; i < tone.length; i++) { tone[i] = T[i] / 255; noise[i] = N[i] / 255; }
+    tileB = p.tileB || null; frameK = p.frameK || 1; notes = Array.isArray(p.notes) ? p.notes : []; renderNotes();
     bgRow = null; setMode(p.mode || 'clean'); drawAxis(); draw(); setMix(); undoStack.length = 0; say('Project “' + file.name + '” loaded.');
   } catch (err) { say('Could not load that project: ' + err.message); } };
 
@@ -790,7 +903,7 @@ function setMode(m) { mode = m; $('mode').textContent = m === 'clean' ? 'Clean' 
 $('mode').onclick = () => setMode(mode === 'clean' ? 'ghost' : 'clean');
 $('play').onclick = () => playing ? stop() : play();
 document.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => selectBrush(b.dataset.brush));
-function selectBrush(name) { brush = name; document.querySelectorAll('[data-brush]').forEach(x => x.classList.toggle('on', x.dataset.brush === name)); }
+function selectBrush(name) { brush = name; document.querySelectorAll('[data-brush]').forEach(x => x.classList.toggle('on', x.dataset.brush === name)); if (window.__notesReady) drawOv(); }
 $('quant').onclick = () => { quant = !quant; $('quant').classList.toggle('on', quant); };
 for (const id of ['loud', 'size', 'ring']) { const f = () => { $(id + 'V').textContent = $(id).value; }; $(id).oninput = f; f(); }
 $('vol').oninput = setMix; $('space').oninput = setMix; $('crunch').onchange = () => { touched(); say('Crunch ' + $('crunch').value + ': ' + ($('crunch').value === '0' ? 'clean 16-bit.' : (16 - $('crunch').value / 10).toFixed(1) + '-bit DAC.')); };
@@ -821,17 +934,17 @@ $('stretchGo').onclick = () => {
 $('listen').onchange = async () => { listen = +$('listen').value; if (playing) { const frac = ((actx.currentTime - t0) % loopDur) / loopDur; const s = await playRender(); if (playing && s) startAt(s, frac * s.length / SR); } say(listen === 1 ? 'Listening at full speed.' : 'Listening at ' + ({0.5: '½', 0.25: '¼', 0.125: '⅛'}[listen]) + ' speed with the pitch unchanged. The loom itself is untouched.'); };
 $('undo').onclick = () => { const u = undoStack.pop(); if (!u) return;
   if (u.cols !== cols) { stop(); bpm = u.bpm; bars = u.bars; secs = u.secs; freeSecs = u.freeSecs; cols = u.cols; $('bpm').value = bpm; $('bars').value = bars; cv.width = cols; img = null; bgCol = null; drawAxis(); showLen(); }
-  tone = u.t; noise = u.n; evlog = u.ev || []; baseLines = u.base || []; imported = !!u.imp; draw(); touched(); markStale(); };
+  tone = u.t; noise = u.n; evlog = u.ev || []; baseLines = u.base || []; imported = !!u.imp; tileB = u.fb || null; frameK = u.fk || 1; draw(); touched(); markStale(); renderNotes(); };
 $('clear').onclick = () => { pushUndo(); tone.fill(0); noise.fill(0); evlog = []; baseLines = []; imported = false; markStale(); draw(); touched(); say('Cleared. (Undo brings it back.)'); };
 $('helpBtn').onclick = () => $('help-ov').classList.add('on');
 $('help-ov').onclick = e => { if (e.target.id === 'help-ov') $('help-ov').classList.remove('on'); };
-const KEYB = ['tone', 'pluck', 'kick', 'snare', 'hat', 'noise', 'erase'];
+const KEYB = ['tone', 'pluck', 'kick', 'snare', 'hat', 'noise', 'erase', 'pin'];
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'Escape') $('help-ov').classList.remove('on');
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('undo').click(); }
   else if (e.key === ' ') { e.preventDefault(); playing ? stop() : play(); }
-  else if (e.key >= '1' && e.key <= '7') selectBrush(KEYB[+e.key - 1]);
+  else if (e.key >= '1' && e.key <= '8') selectBrush(KEYB[+e.key - 1]);
   else if (e.key === '[' || e.key === ']') { const s = $('size'); s.value = Math.max(1, Math.min(10, +s.value + (e.key === ']' ? 1 : -1))); s.oninput(); }
   else if (e.key.toLowerCase() === 'g') $('mode').click();
 });
@@ -1071,7 +1184,7 @@ layout(104, 2, 'new');
 })();
 // exports the headless renderer (tools/weave.py) calls
 async function wavB64(seamless) { const blob = await loopWav(!!seamless); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
-window.__loom = { playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => 'data:image/png;base64,' + b64(tileBytes()), pngReadMeta, loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+window.__loom = { addNote, get notes() { return notes; }, frame, pointRef, notesText, get tileB() { return tileB; }, get frameK() { return frameK; }, playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => 'data:image/png;base64,' + b64(tileBytes()), pngReadMeta, loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
 </script>
 </body>
 </html>
