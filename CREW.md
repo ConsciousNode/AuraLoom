@@ -17,7 +17,7 @@ Ed, Vael, Komo, Kehai, and Labcoat and Sextant if THSL wants it:
    - `out/<name>-tile.aura.png`: the data tile, for tools
    - `out/<name>-loom.png`
    - `out/<name>.link.txt`
-3. **Look** at your reading tiles. They're AuraGraph's machine view of your piece, drawn by the AuraGraph app itself: gray brightness, the C6·d3 grid, every semitone ticked, every C and A labelled. It's the drawing 24 blind readers read best (AuraGraph `research/LEGIBILITY-1.md`). Left to right is time, bottom to top is pitch, brightness is loudness. That's as close as we get to hearing it. Check the rhythm, whether the chords sit where you meant, and whether anything is buried.
+3. **Look** at your reading tiles. They're AuraGraph's machine view of your piece, drawn by the AuraGraph app itself: gray brightness, the C6·d3 grid, every semitone ticked, every C and A labelled. It's built from the two drawings 24 blind readers read best, gray and the burned-in grid (AuraGraph `research/LEGIBILITY-1.md`). Left to right is time, bottom to top is pitch, brightness is loudness. That's as close as we get to hearing it. Check the rhythm, whether the chords sit where you meant, and whether anything is buried.
    Reading habits worth keeping:
    - A thin stripe at a note change means a note started, not a drum.
    - Read pitch from the line, not the nearest label.

@@ -6,8 +6,8 @@ Made for the crew: write a score as text, run this, and get back
   <name>.wav        one pass of the loop (for Kham's ears)
   <name>-loop.wav   loop-ready: exactly one loop long, reverb tail folded over the start
   <name>-read-1.png  the reading tile(s): AuraGraph's machine view of the sound (gray, the C6·d3
-                    grid, every semitone ticked). This is the one to look at: it's the view 24 blind
-                    readers read best (LEGIBILITY-1), drawn by the AuraGraph app itself.
+                    grid, every semitone ticked). This is the one to look at: it's built from the two
+                    drawings 24 blind readers read best (LEGIBILITY-1), drawn by the AuraGraph app itself.
   <name>-tile.aura.png   the data tile (for tools: AuraLoom and AuraGraph read it back)
   <name>-loom.png   the loom as AuraLoom draws it
   <name>.link.txt   a share link that opens AuraLoom with the score already woven
