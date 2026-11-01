@@ -1,0 +1,22 @@
+# Understory: Rest (the inn jingle)
+# Ed Interim, 2026-11-01. One bar, four seconds. For the moment you sleep and wake healed.
+# D dorian, the same organ-and-string floor as Understory. The flute steps up
+# the scale and lands on B natural, dorian's bright note, with a bell and a warm G chord.
+bpm 60
+bars 1
+key D dorian
+voice flute
+space 52
+crunch 2
+
+1      pluck D2+A2 16 50 voice=organ
+1      pluck A3+D4 16 30 voice=string
+
+1      tone D5 2 60
+3      tone E5 2 60
+5      tone G5 2 62
+7      tone A5 3 64
+10     tone B5 7 66
+
+10     pluck G3+B3+D4 6 34 voice=fmKeys
+10     pluck D6 6 36 voice=fmBell

@@ -1,0 +1,61 @@
+# Understory: Morning
+# Ed Interim, 2026-11-01. D dorian, the same bones as Understory with no B-flat anywhere.
+# Rain has stopped and the drips are gone. Where the night version went dark in
+# bars 5-6, this one lifts: the drone moves to E and B, and the lead rests on B natural.
+# The last bar still carries the one glide, but up now, from B to D, an open third
+# instead of a semitone. A few bell glints stand in for sun on the floor.
+bpm 68
+bars 8
+key D dorian
+voice flute
+space 58
+crunch 4
+
+# sun glints: very soft bell, high
+9,38,83     pluck A6 4 24 voice=fmBell
+
+# drone, open fifths in the organ
+1      pluck D2+A2 32 50 voice=organ
+33     pluck G2+D3 32 50 voice=organ
+65     pluck E2+B2 32 50 voice=organ
+97     pluck A2+E3 16 50 voice=organ
+113    pluck D2+A2 16 52 voice=organ
+
+# a thin pad above, open fifths
+1      pluck A3+D4 32 28 voice=string
+33     pluck D4+G4 32 28 voice=string
+65     pluck B3+E4 32 28 voice=string
+97     pluck E4+A4 16 28 voice=string
+113    pluck A3+D4 16 30 voice=string
+
+# the lead: steps only, until the last bar
+1      tone D5 3 62
+5      tone F5 3 62
+9      tone A5 6 66
+17     tone G5 3 60
+21     tone F5 3 60
+25     tone E5 8 62
+
+33     tone D5 3 62
+37     tone G5 3 62
+41     tone B5 6 66
+49     tone A5 3 60
+53     tone G5 3 60
+57     tone E5 8 60
+
+65     tone D5 3 62
+69     tone E5 3 62
+73     tone B5 6 66
+81     tone A5 3 60
+85     tone G5 3 60
+89     tone E5 8 58
+
+97     tone E5 3 58
+101    tone A5 3 60
+105    tone G5 8 56
+
+113    tone B5 5 58
+118    tone B5>D6 10 64
+
+# a bell, once, as the D arrives
+121    pluck D7 8 30 voice=fmBell
