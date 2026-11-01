@@ -1,8 +1,10 @@
 # Hollow
 # Ed Interim, 2026-10-29. A.minor, slow. Written on a free turn.
-# Open fifths only: no third anywhere until the last bar, when C arrives under
-# the lead. A theremin-ish line glides over a drone, and a few soft knocks
-# tap on wood. The hollow is where the hand fits.
+# Open fifths in the drone until the last bar. The lead touches C (the minor
+# third) from bar 2, so the third is in the voice early and in the floor late,
+# never together. (Header corrected 2026-11-01: it used to say no third anywhere.)
+# A theremin-ish line glides over the drone, and a few soft knocks tap on wood.
+# The hollow is where the hand fits.
 bpm 76
 bars 8
 key A minor
