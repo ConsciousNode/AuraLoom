@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
-  AURALOOM v0.4 — ConsciousNode SoftWorks
+  AURALOOM v0.5: The Helix — ConsciousNode SoftWorks
+  Repo policy: the tools work on any audio you have the right to use. Copyrighted recordings, and tiles or sidecars
+  made from them, never go into the repos. The reference recordings are freely licensed (see SOURCES.md) and are the
+  only audio the tests use.
   Weave sound on a loom: pitch threads run across, time runs along, brightness is loudness.
   Paint notes, plucks, drums and noise, then play the picture as a loop.
 
@@ -74,6 +77,16 @@ input[type=number]{width:62px;background:#1f1f23;color:var(--text);border:1px so
 .brushes button{min-width:62px}
 .brushes button small{display:block;font-size:9.5px;color:var(--dim);font-weight:700;letter-spacing:.06em}
 .brushes button.on small{color:#67e8f9}
+#helixBar{display:flex;border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0;overflow:hidden;background:#07070b}
+#helixLab{width:46px;flex:none;background:var(--panel);border-right:1px solid var(--line);font:9.5px ui-monospace,Menlo,Consolas,monospace;color:#67e8f9;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;padding-right:6px;line-height:1.15}
+#helixLab small{color:var(--dim);font-size:8.5px}
+#helixCv{flex:1;height:42px;display:block; width:100%;image-rendering:auto}
+#stage.with-helix{border-radius:0 0 14px 14px}
+label.chk{background:#1f1f23;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:6px 10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+label.chk input{accent-color:rgb(var(--accent));margin:0;cursor:pointer}
+.ll-badge{font:11.5px ui-monospace,Menlo,Consolas,monospace;padding:4px 8px;border-radius:7px;border:1px solid var(--line);background:#121216}
+.ll-badge.ok{color:#34d399;border-color:rgba(52,211,153,.45)}
+.ll-badge.err{color:#f87171;border-color:rgba(248,113,113,.45)}
 #stage{position:relative;display:flex;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#050507}
 #axis{width:46px;flex:none;position:relative;background:var(--panel);border-right:1px solid var(--line);font:10.5px ui-monospace,Menlo,Consolas,monospace;color:var(--dim)}
 #axis div{position:absolute;right:6px;transform:translateY(-50%);white-space:nowrap}
@@ -134,7 +147,7 @@ details.panel[open] summary::before{content:'▾ '}
     </div>
     <div class="row">
       <button id="play" class="play" title="Play / stop the loop (Space)">▶ Play</button>
-      <button id="mode" title="Clean: in-tune oscillators. Ghost: Griffin-Lim, the way AuraGraph tiles play back">Clean</button>
+      <button id="mode" title="Cycle renderer: Clean (oscillators) · Helix (phase-faithful event alignment) · Ghost (Griffin-Lim)">Clean</button><button id="modeHelix" title="Helix: phase-faithful playback aligned to timing helix events (falls back to Ghost if tile has no helix)">Helix</button><button id="modeGhost" title="Ghost: Griffin-Lim random-phase rebuild (v0.4 behaviour)">Ghost</button>
       <span class="g"><span class="lab">Listen</span><select id="listen" title="Slow listening: play the loop slower without changing its pitch (the loom stays as it is)"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="0.125">⅛×</option></select></span>
       <span class="g"><span class="lab">BPM</span><input id="bpm" type="number" min="40" max="240" value="104"></span>
       <span class="g"><span class="lab">Bars</span><select id="bars"><option>1</option><option selected>2</option><option>4</option><option>8</option></select></span>
@@ -180,7 +193,8 @@ details.panel[open] summary::before{content:'▾ '}
 </div>
 
 <div class="panel" style="padding:12px">
-  <div id="stage">
+  <div id="helixBar"><div id="helixLab"><span>HELIX</span><small>coil</small></div><canvas id="helixCv"></canvas></div>
+  <div id="stage" class="with-helix">
     <div id="axis"></div>
     <div id="wrap"><canvas id="cv"></canvas><canvas id="ov"></canvas><div id="head"></div><div id="hover"></div></div>
   </div>
@@ -196,13 +210,18 @@ details.panel[open] summary::before{content:'▾ '}
     <label class="file" title="Read any picture as sound: top = high, bright = loud">🖼 Picture<input id="imgIn" type="file" accept="image/*"></label>
     <label class="file" title="Load an AuraGraph tile (or a Paint-a-Tile PNG) with its real pitch axis">◫ AuraGraph tile<input id="tileIn" type="file" accept="image/png,image/*"></label>
     <button id="playOrig" disabled title="Play the imported recording for comparison">▶ Original</button>
+    <button id="restoreOrig" disabled title="Bit-exact playback restored from the tile's lossless sidecar (agLL)">▶ Restore original</button>
+    <button id="exportOrigWav" disabled title="Export the bit-exact restored 16-bit PCM from the lossless sidecar as WAV">⤓ Export original WAV</button>
+    <span id="llBadge" class="ll-badge" style="display:none"></span>
     <span class="g"><span class="lab">Stretch ×</span><input id="stretchK" type="number" min="0.05" max="64" step="0.25" value="4" title="Widen (above 1) or pinch (below 1) the loom in time. Pitch never moves. Loop limits: 0.5 s to 120 s"><button id="stretchGo" title="Apply the stretch (undoable)">⇔</button></span>
     <span id="lenInfo" class="val" style="min-width:8em"></span>
     <span style="flex:1"></span>
+    <label class="chk" title="Include the Timing Helix strip and event metadata on the loom and in exported tiles (on by default)"><input id="helixOn" type="checkbox" checked> Timing helix</label>
     <button id="saveWav" title="One pass of the loop, reverb tail ringing out at the end">⤓ WAV</button>
     <button id="saveLoop" title="Exactly one loop long, tail folded over the start: loops seamlessly anywhere">⤓ Loop WAV</button>
     <button id="savePng" title="The loom as you see it">⤓ PNG</button>
-    <button id="saveTile" title="An AuraGraph-format tile (160 bands, 30 Hz–11 kHz)">⤓ Tile</button>
+    <button id="saveTile" title="An AuraGraph-format tile (160 bands, 30 Hz–11 kHz, with timing helix when enabled)">⤓ Tile</button>
+    <button id="saveTileNoSidecar" style="display:none" title="Export this AuraGraph tile without its lossless sidecar">⤓ Tile (no sidecar)</button>
     <button id="saveProj" title="Save everything to reopen later">⤓ Project</button>
     <label class="file">⤒ Project<input id="projIn" type="file" accept=".json,.auraloom,application/json"></label>
   </div>
@@ -328,6 +347,745 @@ function partialsAt(name, t) {
 const AG_NB = 160, AG_FMIN = 30, AG_FMAX = 11000;                         // AuraGraph tile format
 const agBandOfFreq = f => Math.log(f / AG_FMIN) / Math.log(AG_FMAX / AG_FMIN) * AG_NB;
 
+
+// ================= v0.5: The Helix & Lossless Sidecar (TILE-FORMAT v0.4) =================
+const HELIX_DATA_ROWS = 24, DEFAULT_SEED = 0xA02A0400;
+let currentSeed = DEFAULT_SEED, rngState = mulberry32(DEFAULT_SEED);
+let importedHelix = null, importedTileA = null, importedSidecar = null, restoredSidecar = null;
+
+function mulberry32(a) {
+  a = (a >>> 0) || DEFAULT_SEED;
+  return function() {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function reseed(s) { currentSeed = (s >>> 0) || DEFAULT_SEED; rngState = mulberry32(currentSeed); return rngState; }
+const sRand = () => rngState();
+
+function fnv1a32(bytes) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+function wrapPi(a) {
+  a = (a + Math.PI) % (2 * Math.PI);
+  return a < 0 ? a + Math.PI : a - Math.PI;
+}
+
+class BitWriter {
+  constructor(initialCap = 65536) { this.buf = new Uint8Array(initialCap); this.bytePos = 0; this.bitBuf = 0; this.bitCnt = 0; }
+  ensure(extra) {
+    if (this.bytePos + extra + 8 > this.buf.length) {
+      const nb = new Uint8Array(Math.max(this.buf.length * 2, this.bytePos + extra + 65536));
+      nb.set(this.buf); this.buf = nb;
+    }
+  }
+  writeBits(val, n) {
+    this.bitBuf = (this.bitBuf << n) | (val & ((1 << n) - 1));
+    this.bitCnt += n;
+    while (this.bitCnt >= 8) {
+      this.bitCnt -= 8;
+      if (this.bytePos >= this.buf.length) this.ensure(1024);
+      this.buf[this.bytePos++] = (this.bitBuf >>> this.bitCnt) & 0xFF;
+    }
+  }
+  writeUnary(q) {
+    while (q >= 16) { this.writeBits(0xFFFF, 16); q -= 16; }
+    if (q > 0) this.writeBits((1 << q) - 1, q);
+    this.writeBits(0, 1);
+  }
+  finish() { if (this.bitCnt > 0) this.writeBits(0, 8 - this.bitCnt); return this.buf.subarray(0, this.bytePos); }
+}
+
+class BitReader {
+  constructor(u8, offset = 0) { this.buf = u8; this.bytePos = offset; this.bitBuf = 0; this.bitCnt = 0; }
+  readBits(n) {
+    while (this.bitCnt < n) {
+      const b = this.bytePos < this.buf.length ? this.buf[this.bytePos++] : 0;
+      this.bitBuf = (this.bitBuf << 8) | b;
+      this.bitCnt += 8;
+    }
+    this.bitCnt -= n;
+    return (this.bitBuf >>> this.bitCnt) & ((1 << n) - 1);
+  }
+  readUnary() {
+    let q = 0;
+    while (true) {
+      if (this.bitCnt === 0) {
+        const b = this.bytePos < this.buf.length ? this.buf[this.bytePos++] : 0;
+        if (b === 0xFF) { q += 8; continue; }
+        this.bitBuf = b; this.bitCnt = 8;
+      }
+      const bit = (this.bitBuf >>> (this.bitCnt - 1)) & 1;
+      this.bitCnt--;
+      if (bit === 0) break;
+      q++;
+    }
+    return q;
+  }
+}
+
+function predictFixed(order, s, i) {
+  if (order === 0 || i === 0) return 0;
+  if (order === 1 || i === 1) return s[i - 1];
+  if (order === 2 || i === 2) return 2 * s[i - 1] - s[i - 2];
+  if (order === 3 || i === 3) return 3 * s[i - 1] - 3 * s[i - 2] + s[i - 3];
+  return 4 * s[i - 1] - 6 * s[i - 2] + 4 * s[i - 3] - s[i - 4];
+}
+
+function solveIntLPC8(s, len) {
+  const P = 8;
+  if (len <= P + 8) return null;
+  const R = new BigInt64Array(P + 1);
+  for (let k = 0; k <= P; k++) {
+    let acc = 0;
+    for (let i = k; i < len; i += 2) acc += Math.imul(s[i], s[i - k]);
+    R[k] = BigInt(acc);
+  }
+  if (R[0] <= 0n) return null;
+  const SCALE = 1048576n;
+  let E = R[0];
+  const a = new BigInt64Array(P + 1), aPrev = new BigInt64Array(P + 1);
+  for (let m = 1; m <= P; m++) {
+    let num = R[m] * SCALE;
+    for (let j = 1; j < m; j++) num -= a[j] * R[m - j];
+    if (E <= 0n) break;
+    let k = num / E;
+    if (k > SCALE - 1024n) k = SCALE - 1024n;
+    if (k < -(SCALE - 1024n)) k = -(SCALE - 1024n);
+    a[m] = k;
+    for (let j = 1; j < m; j++) a[j] = aPrev[j] - (k * aPrev[m - j]) / SCALE;
+    for (let j = 1; j <= m; j++) aPrev[j] = a[j];
+    E = (E * (SCALE * SCALE - k * k)) / (SCALE * SCALE);
+  }
+  const q = new Int32Array(P);
+  for (let j = 0; j < P; j++) q[j] = Math.max(-512, Math.min(511, Number((a[j + 1] * 128n) / SCALE)));
+  return q;
+}
+
+function predictLPC8(q, s, i) {
+  let acc = 64;
+  const n = i < 8 ? i : 8;
+  for (let k = 0; k < n; k++) acc += Math.imul(q[k], s[i - 1 - k]);
+  return acc >> 7;
+}
+
+function encodeChannelBlock(bw, s, N, pitchLag = 0, expectedK = -1) {
+  let bestOrder = 0, bestCost = 0x7fffffff;
+  for (let ord = 0; ord <= 4; ord++) {
+    let cost = 0;
+    for (let i = 0; i < N; i += 2) { const r = s[i] - predictFixed(ord, s, i); cost += r < 0 ? -r : r; }
+    if (cost < bestCost) { bestCost = cost; bestOrder = ord; }
+  }
+  const qLPC = solveIntLPC8(s, N);
+  if (qLPC) {
+    let cost = 80;
+    for (let i = 0; i < N; i += 2) { const r = s[i] - predictLPC8(qLPC, s, i); cost += r < 0 ? -r : r; }
+    if (cost < bestCost) { bestCost = cost; bestOrder = 5; }
+  }
+  const res = new Int32Array(N);
+  if (bestOrder === 5) for (let i = 0; i < N; i++) res[i] = s[i] - predictLPC8(qLPC, s, i);
+  else for (let i = 0; i < N; i++) res[i] = s[i] - predictFixed(bestOrder, s, i);
+
+  let useLTP = 0, ltpGain = 0, ltpLag = pitchLag;
+  if (expectedK >= 0 && pitchLag >= 16 && pitchLag < N - 16) {
+    let bestL = pitchLag, bestG = 0, bestReduction = 0, baseAbs = 0;
+    for (let i = pitchLag + 2; i < N; i += 2) baseAbs += res[i] < 0 ? -res[i] : res[i];
+    for (let dl = -2; dl <= 2; dl++) {
+      const L = pitchLag + dl;
+      let num = 0, den = 0;
+      for (let i = L; i < N; i += 2) { num += Math.imul(res[i], res[i - L]); den += Math.imul(res[i - L], res[i - L]); }
+      if (den <= 0) continue;
+      let g = Math.max(-64, Math.min(63, Math.trunc((num * 64) / den)));
+      if (g === 0) continue;
+      let ltpAbs = 0;
+      for (let i = pitchLag + 2; i < N; i += 2) {
+        const r2 = res[i] - ((Math.imul(g, res[i - L]) + 32) >> 6);
+        ltpAbs += r2 < 0 ? -r2 : r2;
+      }
+      if (baseAbs - ltpAbs > bestReduction + 32) { bestReduction = baseAbs - ltpAbs; bestL = L; bestG = g; }
+    }
+    if (bestG !== 0) {
+      useLTP = 1; ltpLag = bestL; ltpGain = bestG;
+      for (let i = N - 1; i >= ltpLag; i--) res[i] = res[i] - ((Math.imul(ltpGain, res[i - ltpLag]) + 32) >> 6);
+    }
+  }
+
+  bw.writeBits(bestOrder, 3);
+  if (bestOrder === 5) for (let j = 0; j < 8; j++) bw.writeBits((qLPC[j] + 512) & 0x3FF, 10);
+  if (expectedK >= 0) {
+    bw.writeBits(useLTP, 1);
+    if (useLTP) { bw.writeBits(ltpLag & 0x7FF, 11); bw.writeBits((ltpGain + 64) & 0x7F, 7); }
+  }
+
+  const SUB = 128;
+  let prevK = 8;
+  for (let p = 0; p < N; p += SUB) {
+    const end = Math.min(N, p + SUB), cnt = end - p;
+    let sumU = 0;
+    for (let i = p; i < end; i++) { const r = res[i]; sumU += r >= 0 ? (r << 1) : ((-r << 1) - 1); }
+    const meanU = Math.floor(sumU / cnt);
+    const k = meanU < 1 ? 0 : Math.min(15, Math.max(0, 31 - Math.clz32(meanU)));
+    if (expectedK >= 0) {
+      const dk = k - prevK;
+      bw.writeUnary(dk >= 0 ? (dk << 1) : ((-dk << 1) - 1));
+      prevK = k;
+    } else bw.writeBits(k, 4);
+    const mask = (1 << k) - 1;
+    for (let i = p; i < end; i++) {
+      const r = res[i], u = (r >= 0 ? (r << 1) : ((-r << 1) - 1)) >>> 0, q = u >>> k;
+      if (q < 24) { bw.writeUnary(q); if (k > 0) bw.writeBits(u & mask, k); }
+      else { bw.writeUnary(24); bw.writeBits((u >>> 16) & 0xFFFF, 16); bw.writeBits(u & 0xFFFF, 16); }
+    }
+  }
+}
+
+function decodeChannelBlock(br, out, N, useSide) {
+  const order = br.readBits(3);
+  let qLPC = null;
+  if (order === 5) { qLPC = new Int32Array(8); for (let j = 0; j < 8; j++) qLPC[j] = br.readBits(10) - 512; }
+  let useLTP = 0, ltpLag = 0, ltpGain = 0;
+  if (useSide) {
+    useLTP = br.readBits(1);
+    if (useLTP) { ltpLag = br.readBits(11); ltpGain = br.readBits(7) - 64; }
+  }
+  const res = new Int32Array(N), SUB = 128;
+  let prevK = 8;
+  for (let p = 0; p < N; p += SUB) {
+    const end = Math.min(N, p + SUB);
+    let k;
+    if (useSide) { const uk = br.readUnary(); const dk = (uk & 1) ? -((uk + 1) >> 1) : (uk >> 1); k = prevK + dk; prevK = k; }
+    else k = br.readBits(4);
+    for (let i = p; i < end; i++) {
+      const q = br.readUnary();
+      let u;
+      if (q < 24) { const rem = k > 0 ? br.readBits(k) : 0; u = ((q << k) | rem) >>> 0; }
+      else { const hi = br.readBits(16), lo = br.readBits(16); u = ((hi << 16) | lo) >>> 0; }
+      res[i] = (u & 1) ? -((u + 1) >>> 1) : (u >>> 1);
+    }
+  }
+  if (useLTP) for (let i = ltpLag; i < N; i++) res[i] = res[i] + ((Math.imul(ltpGain, res[i - ltpLag]) + 32) >> 6);
+  if (order === 5) for (let i = 0; i < N; i++) out[i] = res[i] + predictLPC8(qLPC, out, i);
+  else for (let i = 0; i < N; i++) out[i] = res[i] + predictFixed(order, out, i);
+}
+
+function encodeLossless(pcmInt16, rate, channels, sideInfo = null) {
+  const frames = Math.floor(pcmInt16.length / channels);
+  const leBytes = new Uint8Array(frames * channels * 2), leDv = new DataView(leBytes.buffer);
+  for (let i = 0; i < frames * channels; i++) leDv.setInt16(i * 2, pcmInt16[i], true);
+  const hash = fnv1a32(leBytes);
+  const BLK = 2048, bw = new BitWriter(Math.max(4096, leBytes.length >> 1));
+  const useSide = sideInfo && sideInfo.pitchLags ? 1 : 0;
+  const ch0 = new Int32Array(BLK), ch1 = new Int32Array(BLK), mid = new Int32Array(BLK), side = new Int32Array(BLK);
+  let blkIdx = 0;
+  for (let pos = 0; pos < frames; pos += BLK, blkIdx++) {
+    const N = Math.min(BLK, frames - pos);
+    const pitchLag = useSide ? (sideInfo.pitchLags[blkIdx] || 0) : 0;
+    const expK = useSide ? 8 : -1;
+    if (channels === 1) {
+      for (let i = 0; i < N; i++) ch0[i] = pcmInt16[pos + i];
+      encodeChannelBlock(bw, ch0, N, pitchLag, expK);
+    } else {
+      for (let i = 0; i < N; i++) {
+        const L = pcmInt16[(pos + i) * 2], R = pcmInt16[(pos + i) * 2 + 1];
+        ch0[i] = L; ch1[i] = R; mid[i] = (L + R) >> 1; side[i] = L - R;
+      }
+      let eLR = 0, eMS = 0;
+      for (let i = 1; i < N; i += 2) {
+        eLR += Math.abs(ch0[i] - ch0[i - 1]) + Math.abs(ch1[i] - ch1[i - 1]);
+        eMS += Math.abs(mid[i] - mid[i - 1]) + Math.abs(side[i] - side[i - 1]);
+      }
+      if (eMS <= eLR) { bw.writeBits(1, 1); encodeChannelBlock(bw, mid, N, pitchLag, expK); encodeChannelBlock(bw, side, N, 0, expK); }
+      else { bw.writeBits(0, 1); encodeChannelBlock(bw, ch0, N, pitchLag, expK); encodeChannelBlock(bw, ch1, N, pitchLag, expK); }
+    }
+  }
+  const payload = bw.finish(), out = new Uint8Array(20 + payload.length), dv = new DataView(out.buffer);
+  out[0] = 0x41; out[1] = 0x47; out[2] = 0x4C; out[3] = 0x4C;
+  out[4] = useSide ? 2 : 1; out[5] = channels;
+  dv.setUint16(6, 16, true); dv.setUint32(8, rate, true); dv.setUint32(12, frames, true); dv.setUint32(16, hash, true);
+  out.set(payload, 20);
+  return { bytes: out, hash, frames, rate, channels };
+}
+
+function decodeLossless(u8) {
+  if (!u8 || u8.length < 20 || u8[0] !== 0x41 || u8[1] !== 0x47 || u8[2] !== 0x4C || u8[3] !== 0x4C) throw new Error('Invalid agLL sidecar header');
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const ver = u8[4], channels = u8[5], bits = dv.getUint16(6, true), rate = dv.getUint32(8, true), frames = dv.getUint32(12, true), expectedHash = dv.getUint32(16, true);
+  const useSide = ver === 2, BLK = 2048, br = new BitReader(u8, 20);
+  const pcmInt16 = new Int16Array(frames * channels), a = new Int32Array(BLK), b = new Int32Array(BLK);
+  for (let pos = 0; pos < frames; pos += BLK) {
+    const N = Math.min(BLK, frames - pos);
+    if (channels === 1) {
+      decodeChannelBlock(br, a, N, useSide);
+      for (let i = 0; i < N; i++) pcmInt16[pos + i] = a[i];
+    } else {
+      const ms = br.readBits(1);
+      decodeChannelBlock(br, a, N, useSide); decodeChannelBlock(br, b, N, useSide);
+      if (ms === 1) {
+        for (let i = 0; i < N; i++) {
+          const M = a[i], S = b[i], R = M - (S >> 1), L = R + S;
+          pcmInt16[(pos + i) * 2] = L; pcmInt16[(pos + i) * 2 + 1] = R;
+        }
+      } else {
+        for (let i = 0; i < N; i++) { pcmInt16[(pos + i) * 2] = a[i]; pcmInt16[(pos + i) * 2 + 1] = b[i]; }
+      }
+    }
+  }
+  const leBytes = new Uint8Array(frames * channels * 2), leDv = new DataView(leBytes.buffer);
+  for (let i = 0; i < frames * channels; i++) leDv.setInt16(i * 2, pcmInt16[i], true);
+  const actualHash = fnv1a32(leBytes);
+  return { pcmInt16, rate, channels, bits, frames, expectedHash, actualHash, exact: actualHash === expectedHash };
+}
+
+function pngReadSidecar(buf) {
+  const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const v = new DataView(u.buffer, u.byteOffset, u.byteLength);
+  if (u.length < 16 || u[1] !== 0x50 || u[2] !== 0x4E) return null;
+  for (let p = 8; p + 8 <= u.length;) {
+    const len = v.getUint32(p), type = String.fromCharCode(u[p + 4], u[p + 5], u[p + 6], u[p + 7]);
+    if (type === 'agLL') return u.slice(p + 8, p + 8 + len);
+    if (type === 'IEND') break;
+    p += 12 + len;
+  }
+  return null;
+}
+
+function makePngChunk(type4, bodyU8) {
+  const ch = new Uint8Array(12 + bodyU8.length), dv = new DataView(ch.buffer);
+  dv.setUint32(0, bodyU8.length);
+  for (let i = 0; i < 4; i++) ch[4 + i] = type4.charCodeAt(i);
+  ch.set(bodyU8, 8);
+  dv.setUint32(8 + bodyU8.length, crc32(ch.subarray(4, 8 + bodyU8.length)));
+  return ch;
+}
+
+// Build Helix event list from current Loom threads (when exporting a painted/woven loom tile or playing in Helix mode)
+function buildLoomHelix(T, N, C) {
+  T = T || tone; N = N || noise; C = C || cols;
+  if (importedHelix && Array.isArray(importedHelix.events) && importedHelix.events.length) return importedHelix;
+  const events = [];
+  let lastF0 = 0, lastVoiced = false, lastEventC = -99;
+  for (let c = 0; c < C; c++) {
+    let bestR = -1, bestT = 0, sumN = 0, flux = 0;
+    for (let r = 0; r < NR; r++) {
+      const tv = T[r * C + c], nv = N[r * C + c];
+      if (tv > bestT) { bestT = tv; bestR = r; }
+      sumN += nv;
+      if (c > 0) {
+        const dt = tv - T[r * C + c - 1], dn = nv - N[r * C + c - 1];
+        if (dt > 0) flux += dt;
+        if (dn > 0) flux += dn * 1.2;
+      }
+    }
+    const voiced = bestT > 0.18;
+    const f0 = voiced ? rowFreq(bestR) : 0;
+    const isOnset = flux > 1.2 && (c - lastEventC >= 2);
+    const pitchChanged = voiced && (!lastVoiced || Math.abs(Math.log2(f0 / Math.max(20, lastF0))) > 0.025);
+    const voiceEnded = !voiced && sumN < 1.0 && lastVoiced;
+
+    if (voiceEnded && !isOnset) {
+      events.push({ s: c * HOP, c, k: 'U', f0: 0, intv: 0, a: 0, cyc: 0 });
+      lastVoiced = false; lastEventC = c;
+    } else if (isOnset || pitchChanged || (c === 0 && (voiced || sumN > 1))) {
+      const kind = (isOnset && sumN > bestT * 4) ? 'T' : (voiced ? 'P' : 'T');
+      events.push({
+        s: c * HOP,
+        c,
+        k: kind,
+        f0: voiced ? +f0.toFixed(1) : 0,
+        intv: voiced ? +(SR / f0).toFixed(1) : 0,
+        a: +Math.min(1, Math.max(bestT, sumN / 20)).toFixed(2),
+        pol: 1,
+        cyc: 0
+      });
+      lastEventC = c;
+      if (voiced) lastF0 = f0;
+      lastVoiced = voiced;
+    }
+  }
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.f0 > 0 && i + 1 < events.length) {
+      const ds = events[i + 1].s - e.s;
+      const fAvg = events[i + 1].f0 > 0 ? 0.5 * (e.f0 + events[i + 1].f0) : e.f0;
+      e.cyc = Math.max(1, Math.round((ds / SR) * fAvg));
+    }
+  }
+  const qBuf = new Uint8Array(Math.min(256, T.length));
+  for (let i = 0; i < qBuf.length; i++) qBuf[i] = Math.round(T[i] * 255);
+  const seed = fnv1a32(qBuf) || DEFAULT_SEED;
+  return { v: 1, sr: SR, hop: HOP, nfft: NFFT, ref: 1, seed, events };
+}
+
+function drawHelixStripRGBA(rgba, imgW, x0, y0, W, H, C, getColProfile, helix) {
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = ((y0 + y) * imgW + (x0 + x)) * 4;
+      rgba[p] = 11; rgba[p + 1] = 9; rgba[p + 2] = 18; rgba[p + 3] = 255;
+    }
+  }
+  const midY = (H - 1) * 0.5, midYi = Math.round(midY);
+  for (let x = 0; x < W; x++) {
+    const pm = ((y0 + midYi) * imgW + (x0 + x)) * 4;
+    rgba[pm] = 34; rgba[pm + 1] = 30; rgba[pm + 2] = 48;
+    const pb = ((y0 + H - 1) * imgW + (x0 + x)) * 4;
+    rgba[pb] = 63; rgba[pb + 1] = 63; rgba[pb + 2] = 70;
+  }
+  if (C <= 0) return;
+  const evs = (helix && Array.isArray(helix.events)) ? helix.events : [];
+  const evCols = (helix && helix.hop && importedTileA) ? importedTileA.F : C;
+  const scaleC = evCols > 0 ? C / evCols : 1;
+
+  const rawF0 = new Float32Array(C), colAmp = new Float32Array(C), colSpike = new Float32Array(C);
+  for (const e of evs) {
+    const c = Math.max(0, Math.min(C - 1, Math.round((e.c || 0) * scaleC)));
+    if (e.k === 'T') colSpike[c] = Math.max(colSpike[c], Math.max(0.5, e.a || 0.75));
+  }
+  let evIdx = 0, curF0 = 0;
+  for (let c = 0; c < C; c++) {
+    while (evIdx < evs.length && Math.round((evs[evIdx].c || 0) * scaleC) <= c) {
+      const e = evs[evIdx++];
+      if (e.k === 'U') curF0 = 0;
+      else if (e.f0 > 0) curF0 = e.f0;
+    }
+    const prof = getColProfile(c);
+    if (prof.maxLv < 0.12) { rawF0[c] = 0; colAmp[c] = 0; }
+    else {
+      rawF0[c] = curF0 > 0 ? curF0 : prof.f0;
+      colAmp[c] = Math.max(0.28, Math.min(0.95, Math.pow(prof.maxLv, 0.75)));
+    }
+  }
+  const colF0 = new Float32Array(C);
+  for (let c = 0; c < C; c++) {
+    const a = rawF0[Math.max(0, c - 1)], b = rawF0[c], d = rawF0[Math.min(C - 1, c + 1)];
+    colF0[c] = a > b ? (b > d ? b : (a > d ? d : a)) : (a > d ? a : (b > d ? d : b));
+  }
+
+  let phi = 0;
+  const radMax = Math.max(3.5, (H - 4) * 0.42);
+  let prevY = midY, wasActive = false;
+  const thick = H >= 32 ? 1.35 : 0.95;
+
+  for (let x = 0; x < W; x++) {
+    const cf = (x / Math.max(1, W - 1)) * (C - 1);
+    const ci = Math.min(C - 1, Math.floor(cf)), tx = cf - ci;
+    const f0a = colF0[ci], f0b = colF0[Math.min(C - 1, ci + 1)];
+    const f0 = (f0a > 0 && f0b > 0) ? f0a * (1 - tx) + f0b * tx : (f0a || f0b);
+    const amp = colAmp[ci] * (1 - tx) + colAmp[Math.min(C - 1, ci + 1)] * tx;
+
+    if (f0 > 0 && amp > 0.14) {
+      if (!wasActive) phi = 0;
+      const pitchNorm = Math.max(0, Math.min(1, Math.log(f0 / 55) / Math.log(1200 / 55)));
+      const pxPerTurn = Math.max(3.6, (24 - 17.5 * pitchNorm) * (W / 900));
+      phi = (phi + (2 * Math.PI) / pxPerTurn) % (2 * Math.PI);
+
+      const yVal = midY - Math.sin(phi) * radMax * amp;
+      const depth = Math.cos(phi);
+      let R, G, B;
+      if (depth >= 0) {
+        R = Math.round(70 + 180 * depth); G = Math.round(205 + 45 * depth); B = Math.round(240 - 115 * depth);
+      } else {
+        const d0 = depth + 1;
+        R = Math.round(52 + 50 * d0); G = Math.round(22 + 75 * d0); B = Math.round(115 + 80 * d0);
+      }
+      const yA = wasActive ? Math.min(prevY, yVal) : yVal;
+      const yB = wasActive ? Math.max(prevY, yVal) : yVal;
+      const yi0 = Math.max(1, Math.floor(yA - thick)), yi1 = Math.min(H - 2, Math.ceil(yB + thick));
+      for (let yy = yi0; yy <= yi1; yy++) {
+        const dist = yy < yA ? yA - yy : (yy > yB ? yy - yB : 0);
+        const a = Math.max(0, Math.min(1, 1.15 - dist / thick));
+        if (a <= 0) continue;
+        const p = ((y0 + yy) * imgW + (x0 + x)) * 4;
+        rgba[p] = Math.round(rgba[p] * (1 - a) + R * a);
+        rgba[p + 1] = Math.round(rgba[p + 1] * (1 - a) + G * a);
+        rgba[p + 2] = Math.round(rgba[p + 2] * (1 - a) + B * a);
+      }
+      prevY = yVal; wasActive = true;
+    } else {
+      wasActive = false; prevY = midY;
+    }
+  }
+
+  for (let c = 0; c < C; c++) {
+    const sp = colSpike[c];
+    if (sp <= 0) continue;
+    const xc = Math.round((c + 0.5) / C * (W - 1));
+    const hSpike = Math.max(4, Math.round((H - 3) * Math.min(1, 0.65 + 0.35 * sp)));
+    const yTop = Math.max(1, Math.round(midY - hSpike * 0.5)), yBot = Math.min(H - 2, Math.round(midY + hSpike * 0.5));
+    for (let yy = yTop; yy <= yBot; yy++) {
+      const p = ((y0 + yy) * imgW + (x0 + xc)) * 4;
+      rgba[p] = 255; rgba[p + 1] = 248; rgba[p + 2] = 195;
+    }
+    if (xc > 0 && xc + 1 < W) {
+      for (const dx of [-1, 0, 1]) {
+        const pt = ((y0 + yTop) * imgW + (x0 + xc + dx)) * 4;
+        rgba[pt] = 255; rgba[pt + 1] = 248; rgba[pt + 2] = 195;
+      }
+    }
+  }
+}
+
+function drawHelixBar() {
+  const bar = $('helixBar'), hcv = $('helixCv'), stg = $('stage');
+  if (!bar || !hcv) return;
+  const on = $('helixOn') ? $('helixOn').checked : true;
+  bar.style.display = on ? 'flex' : 'none';
+  if (stg) stg.classList.toggle('with-helix', on);
+  if (!on || !tone || !cols) return;
+  const W = Math.max(320, Math.min(960, hcv.clientWidth || cols * 2)), H = 42;
+  if (hcv.width !== W || hcv.height !== H) { hcv.width = W; hcv.height = H; }
+  const g = hcv.getContext('2d'), im = g.createImageData(W, H);
+  const hx = buildLoomHelix(tone, noise, cols);
+  drawHelixStripRGBA(im.data, W, 0, 0, W, H, cols, c => {
+    let maxLv = 0, bestR = 48;
+    for (let r = 0; r < NR; r++) {
+      const v = Math.max(tone[r * cols + c], noise[r * cols + c] * 0.7);
+      if (v > maxLv) { maxLv = v; bestR = r; }
+    }
+    return { maxLv, f0: maxLv > 0.15 ? rowFreq(bestR) : 0 };
+  }, hx);
+  g.putImageData(im, 0, 0);
+}
+
+// Phase-faithful Helix playback on the Loom (falls back to Ghost if imported tile has no helix data)
+async function renderHelix(iters, onProgress, T, N, C, L) {
+  T = T || tone; N = N || noise; C = C || cols; L = L || loopLen();
+  if (imported && (!importedHelix || !Array.isArray(importedHelix.events) || !importedHelix.events.length)) {
+    return renderGhost(iters || 32, onProgress, T, N, C, L);
+  }
+  const hx = (imported && importedHelix) ? importedHelix : buildLoomHelix(T, N, C);
+  if (!hx || !hx.events || !hx.events.length) {
+    return renderGhost(iters || 32, onProgress, T, N, C, L);
+  }
+
+  // If we have the imported AuraGraph 160-band tile + v0.4 event phase anchors at native 2048-FFT / 512-hop,
+  // run the exact v0.4 phase-faithful synthesizer when unstretched!
+  if (imported && importedTileA && importedHelix && C === cols && L === loopLen() && Math.abs(frameK - 1) < 1e-3) {
+    const NFFT2 = 2048, HOP2 = 512, NB2 = 160, NBIN2 = NFFT2 / 2 + 1;
+    const F2 = importedTileA.F, range2 = importedTileA.range || 60, ref2 = hx.ref || 0.05;
+    const bits = 11, rev2 = new Uint32Array(NFFT2), cos2 = new Float64Array(NFFT2 / 2), sin2 = new Float64Array(NFFT2 / 2);
+    for (let i = 0; i < NFFT2; i++) { let r = 0; for (let j = 0; j < bits; j++) r |= ((i >> j) & 1) << (bits - 1 - j); rev2[i] = r; }
+    for (let i = 0; i < NFFT2 / 2; i++) { cos2[i] = Math.cos(2 * Math.PI * i / NFFT2); sin2[i] = Math.sin(2 * Math.PI * i / NFFT2); }
+    const win2 = Float64Array.from({ length: NFFT2 }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / NFFT2));
+    let ws2 = 0; for (const w of win2) ws2 += w;
+    const re2 = new Float64Array(NFFT2), im2 = new Float64Array(NFFT2);
+    const run2 = inv => {
+      for (let i = 0; i < NFFT2; i++) { const j = rev2[i]; if (j > i) { let t = re2[i]; re2[i] = re2[j]; re2[j] = t; t = im2[i]; im2[i] = im2[j]; im2[j] = t; } }
+      for (let size = 2; size <= NFFT2; size <<= 1) {
+        const half = size >> 1, step = NFFT2 / size;
+        for (let i = 0; i < NFFT2; i += size) for (let j = 0; j < half; j++) {
+          const c = cos2[j * step], s = inv ? sin2[j * step] : -sin2[j * step], a = i + j, b = a + half;
+          const tr = re2[b] * c - im2[b] * s, ti = re2[b] * s + im2[b] * c;
+          re2[b] = re2[a] - tr; im2[b] = im2[a] - ti; re2[a] += tr; im2[a] += ti;
+        }
+      }
+      if (inv) for (let i = 0; i < NFFT2; i++) { re2[i] /= NFFT2; im2[i] /= NFFT2; }
+    };
+    const plan2 = [];
+    for (let b = 0; b < NB2; b++) {
+      const lo = AG_FMIN * Math.pow(AG_FMAX / AG_FMIN, b / NB2), hi = AG_FMIN * Math.pow(AG_FMAX / AG_FMIN, (b + 1) / NB2), df2 = SR / NFFT2, ks2 = [];
+      for (let k = 0; k <= NFFT2 / 2; k++) { const f = k * df2; if (f >= lo && f < hi) ks2.push(k); }
+      if (!ks2.length) ks2.push(Math.max(1, Math.min(NFFT2 / 2, Math.round(Math.sqrt(lo * hi) / df2))));
+      plan2.push(ks2);
+    }
+    const dbLut = new Float32Array(256);
+    for (let i = 1; i < 256; i++) dbLut[i] = ref2 * Math.pow(10, (i / 255 - 1) * range2 / 20) * ws2;
+    const bandMag = new Float32Array(F2 * NB2);
+    for (let c = 0; c < F2; c++) for (let b = 0; b < NB2; b++) bandMag[c * NB2 + b] = dbLut[Math.max(0, Math.min(255, Math.round(importedTileA.lev[b * F2 + c] * 255)))];
+
+    const mag = new Float32Array(F2 * NBIN2), hRe = new Float32Array(F2 * NBIN2), hIm = new Float32Array(F2 * NBIN2), tether = new Float32Array(F2);
+    const rng = mulberry32(hx.seed || DEFAULT_SEED);
+    const evs = hx.events.slice().sort((a, b) => a.c - b.c);
+    const bandKeys = Array.from({ length: NB2 }, () => []);
+    for (const e of evs) {
+      if (e.k === 'U') for (let b = 0; b < NB2; b++) bandKeys[b].push({ c: e.c, off: true });
+      else if (e.ph) {
+        const bytes = unb64(e.ph), s = e.s != null ? e.s : (e.c * HOP2 + NFFT2 / 2);
+        for (let i = 0; i + 3 < bytes.length; i += 4) {
+          const b = bytes[i]; if (b >= NB2) continue;
+          const ks2 = plan2[b], alQ = (bytes[i + 1] >>> 6) & 3, kIdx = Math.min(ks2.length - 1, bytes[i + 1] & 0x3F);
+          const phiQ = (bytes[i + 2] << 24) >> 24, dPhiQ = (bytes[i + 3] << 24) >> 24;
+          bandKeys[b].push({ c: e.c, s, k: ks2[kIdx], alpha: 0.1 + 0.27 * alQ, phi: (phiQ / 127) * Math.PI, dPhi: (dPhiQ / 127) * Math.PI });
+        }
+      }
+    }
+    for (let b = 0; b < NB2; b++) {
+      const list = bandKeys[b];
+      for (let i = 0; i < list.length; i++) {
+        const cur = list[i]; if (cur.off) continue;
+        const baseOmega = (2 * Math.PI * cur.k * HOP2) / NFFT2 + cur.dPhi;
+        cur.omegaEff = baseOmega;
+        if (i + 1 < list.length && !list[i + 1].off && list[i + 1].c > cur.c && list[i + 1].k === cur.k) {
+          const nxt = list[i + 1], dt = nxt.c - cur.c;
+          cur.omegaEff = baseOmega + wrapPi(nxt.phi - (cur.phi + dt * baseOmega)) / dt;
+        }
+      }
+    }
+    const bandPtr = new Int32Array(NB2);
+    let evPtr = 0, curPulseS = 0, curPol = 1, curKind = 'U', curF0 = 0;
+    for (let c = 0; c < F2; c++) {
+      const frameStartS = c * HOP2;
+      let isEventFrame = false;
+      while (evPtr < evs.length && evs[evPtr].c <= c) {
+        const e = evs[evPtr++]; curF0 = e.f0 || 0; curPulseS = e.s != null ? e.s : (frameStartS + NFFT2 / 2); curPol = e.pol || 1; curKind = e.k || 'P';
+        if (e.c === c) isEventFrame = true;
+      }
+      for (let b = 0; b < NB2; b++) { const list = bandKeys[b]; while (bandPtr[b] + 1 < list.length && list[bandPtr[b] + 1].c <= c) bandPtr[b]++; }
+      tether[c] = isEventFrame ? 0.85 : (curKind === 'P' ? 0.60 : 0.35);
+      for (let b = 0; b < NB2; b++) {
+        const bm = bandMag[c * NB2 + b]; if (bm <= 0) continue;
+        const ks2 = plan2[b], nBins = ks2.length, list = bandKeys[b];
+        const kf = list.length && list[bandPtr[b]].c <= c && !list[bandPtr[b]].off ? list[bandPtr[b]] : null;
+        if (kf && (c - kf.c) <= 16) {
+          const k = kf.k, dt = c - kf.c, phiK = kf.phi + dt * kf.omegaEff, dOmega = kf.omegaEff - (2 * Math.PI * k * HOP2) / NFFT2;
+          const al = nBins > 1 ? kf.alpha : 0, pkM = bm * (1 + al * (nBins - 1)), bgM = bm * (1 - al);
+          for (let j = 0; j < nBins; j++) {
+            const kk = ks2[j], candM = kk === k ? pkM : bgM;
+            if (candM >= mag[c * NBIN2 + kk]) {
+              mag[c * NBIN2 + kk] = candM;
+              const omegaKK = (2 * Math.PI * kk * HOP2) / NFFT2 + dOmega;
+              const phi0KK = kf.phi - (2 * Math.PI * (kk - k) * (kf.s - kf.c * HOP2)) / NFFT2;
+              const phi = kk === k ? phiK : phi0KK + dt * omegaKK;
+              hRe[c * NBIN2 + kk] = Math.cos(phi); hIm[c * NBIN2 + kk] = Math.sin(phi);
+            }
+          }
+        } else {
+          for (let j = 0; j < nBins; j++) {
+            const kk = ks2[j];
+            if (bm >= mag[c * NBIN2 + kk]) {
+              mag[c * NBIN2 + kk] = bm;
+              let phi;
+              if (isEventFrame && curKind === 'T') phi = -(2 * Math.PI * kk * (curPulseS - frameStartS)) / NFFT2 + (curPol < 0 ? Math.PI : 0);
+              else if (curF0 > 0) {
+                const T0 = SR / curF0, pS = curPulseS + Math.round((frameStartS + NFFT2 / 2 - curPulseS) / T0) * T0;
+                phi = -(2 * Math.PI * kk * (pS - frameStartS)) / NFFT2;
+              } else phi = rng() * 2 * Math.PI;
+              hRe[c * NBIN2 + kk] = Math.cos(phi); hIm[c * NBIN2 + kk] = Math.sin(phi);
+            }
+          }
+        }
+      }
+    }
+    const phRe = Float32Array.from(hRe), phIm = Float32Array.from(hIm);
+    const len2 = (F2 - 1) * HOP2 + NFFT2, out2 = new Float32Array(len2), norm2 = new Float32Array(len2);
+    for (let c = 0; c < F2; c++) for (let i = 0; i < NFFT2; i++) norm2[c * HOP2 + i] += win2[i] * win2[i];
+    const istft2 = () => {
+      out2.fill(0);
+      for (let c = 0; c < F2; c++) {
+        for (let k = 0; k < NBIN2; k++) { const m = mag[c * NBIN2 + k]; re2[k] = m * phRe[c * NBIN2 + k]; im2[k] = m * phIm[c * NBIN2 + k]; }
+        im2[0] = 0; im2[NFFT2 / 2] = 0;
+        for (let k = 1; k < NFFT2 / 2; k++) { re2[NFFT2 - k] = re2[k]; im2[NFFT2 - k] = -im2[k]; }
+        run2(true);
+        for (let i = 0; i < NFFT2; i++) out2[c * HOP2 + i] += re2[i] * win2[i];
+      }
+      for (let i = 0; i < len2; i++) out2[i] /= Math.max(norm2[i], 1e-4);
+    };
+    const nIt = iters != null ? iters : 8;
+    for (let it = 0; it < nIt; it++) {
+      istft2();
+      const alpha = Math.max(0.25, 0.78 * Math.pow(0.88, it));
+      for (let c = 0; c < F2; c++) {
+        const wTether = tether[c] * alpha;
+        for (let i = 0; i < NFFT2; i++) { re2[i] = out2[c * HOP2 + i] * win2[i]; im2[i] = 0; }
+        run2(false);
+        for (let k = 0; k < NBIN2; k++) {
+          const idx = c * NBIN2 + k, r = Math.sqrt(re2[k] * re2[k] + im2[k] * im2[k]);
+          const uRe = r > 1e-12 ? re2[k] / r : hRe[idx], uIm = r > 1e-12 ? im2[k] / r : hIm[idx];
+          const mRe = (1 - wTether) * uRe + wTether * hRe[idx], mIm = (1 - wTether) * uIm + wTether * hIm[idx];
+          const mr = Math.sqrt(mRe * mRe + mIm * mIm) || 1;
+          phRe[idx] = mRe / mr; phIm[idx] = mIm / mr;
+        }
+      }
+      if (it % 3 === 2 && onProgress) { onProgress(it + 1, nIt); await new Promise(r => setTimeout(r)); }
+    }
+    istft2();
+    const res = new Float32Array(L);
+    let peak = 0;
+    for (let i = 0; i < L; i++) { res[i] = out2[i] || 0; if (Math.abs(res[i]) > peak) peak = Math.abs(res[i]); }
+    if (peak > 0.98) for (let i = 0; i < L; i++) res[i] *= 0.95 / peak;
+    return res;
+  }
+
+  // Loom grid phase-aligned Helix synthesis (NFFT = 1024, HOP = 256)
+  const mag = new Float32Array(C * NBIN);
+  for (let c = 0; c < C; c++) for (let k = 0; k < NBIN; k++) {
+    const rf = binRow[k]; if (rf < 0 || rf >= NR - 1) continue;
+    const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * C + c, i1 = i0 + C;
+    const v = Math.max(T[i0], N[i0]) * (1 - t) + Math.max(T[i1], N[i1]) * t;
+    mag[c * NBIN + k] = levelOf(v);
+  }
+  const len = (C - 1) * HOP + NFFT, out = new Float32Array(len), norm = new Float32Array(len);
+  for (let c = 0; c < C; c++) for (let i = 0; i < NFFT; i++) norm[c * HOP + i] += win[i] * win[i];
+  const hRe = new Float32Array(C * NBIN), hIm = new Float32Array(C * NBIN), tether = new Float32Array(C);
+  const rng = mulberry32(hx.seed || DEFAULT_SEED);
+  const evs = hx.events.slice().sort((a, b) => a.s - b.s);
+  const scaleS = hx.sr ? SR / hx.sr : 1;
+  let evPtr = 0, curPulseS = 0, curF0 = 0, curKind = 'U', curPol = 1;
+  const runPhi = new Float32Array(NBIN);
+  for (let k = 0; k < NBIN; k++) runPhi[k] = rng() * 2 * Math.PI;
+
+  for (let c = 0; c < C; c++) {
+    const centreS = c * HOP + NFFT / 2, startS = c * HOP;
+    let isEv = false;
+    while (evPtr < evs.length && evs[evPtr].s * scaleS <= centreS + HOP / 2) {
+      const e = evs[evPtr++]; curPulseS = e.s * scaleS; curF0 = e.f0 || 0; curKind = e.k || 'P'; curPol = e.pol || 1;
+      isEv = true;
+    }
+    tether[c] = isEv ? 0.8 : (curF0 > 0 ? 0.5 : 0.25);
+    let pS = curPulseS;
+    if (curF0 > 0) { const T0 = SR / curF0; pS = curPulseS + Math.round((centreS - curPulseS) / T0) * T0; }
+    for (let k = 0; k < NBIN; k++) {
+      let phi;
+      if (isEv && curKind === 'T') phi = -(2 * Math.PI * k * (curPulseS - startS)) / NFFT + (curPol < 0 ? Math.PI : 0);
+      else if (curF0 > 0) phi = isEv ? -(2 * Math.PI * k * (pS - startS)) / NFFT : (runPhi[k] + (2 * Math.PI * k * HOP) / NFFT);
+      else phi = rng() * 2 * Math.PI;
+      runPhi[k] = phi;
+      hRe[c * NBIN + k] = Math.cos(phi); hIm[c * NBIN + k] = Math.sin(phi);
+    }
+  }
+  const phRe = Float32Array.from(hRe), phIm = Float32Array.from(hIm);
+  const re = new Float64Array(NFFT), im = new Float64Array(NFFT);
+  const istft = () => {
+    out.fill(0);
+    for (let c = 0; c < C; c++) {
+      for (let k = 0; k < NBIN; k++) { const m = mag[c * NBIN + k]; re[k] = m * phRe[c * NBIN + k]; im[k] = m * phIm[c * NBIN + k]; }
+      for (let k = 1; k < NFFT / 2; k++) { re[NFFT - k] = re[k]; im[NFFT - k] = -im[k]; }
+      fft(re, im, true);
+      for (let i = 0; i < NFFT; i++) out[c * HOP + i] += re[i] * win[i];
+    }
+    for (let i = 0; i < len; i++) out[i] /= Math.max(norm[i], 0.5);
+  };
+  const nIt = iters != null ? iters : 12;
+  for (let it = 0; it < nIt; it++) {
+    istft();
+    const alpha = Math.max(0.2, 0.75 * Math.pow(0.86, it));
+    for (let c = 0; c < C; c++) {
+      const wT = tether[c] * alpha;
+      for (let i = 0; i < NFFT; i++) { re[i] = out[c * HOP + i] * win[i]; im[i] = 0; }
+      fft(re, im, false);
+      for (let k = 0; k < NBIN; k++) {
+        const idx = c * NBIN + k, r = Math.hypot(re[k], im[k]) || 1;
+        const mRe = (1 - wT) * (re[k] / r) + wT * hRe[idx], mIm = (1 - wT) * (im[k] / r) + wT * hIm[idx];
+        const mr = Math.hypot(mRe, mIm) || 1;
+        phRe[idx] = mRe / mr; phIm[idx] = mIm / mr;
+      }
+    }
+    if (it % 3 === 2 && onProgress) { onProgress(it + 1, nIt); await new Promise(r => setTimeout(r)); }
+  }
+  istft();
+  const res = new Float32Array(L), off = (NFFT - HOP) / 2;
+  let peak = 0; for (let i = 0; i < L; i++) { res[i] = out[i + off] || 0; peak = Math.max(peak, Math.abs(res[i])); }
+  if (peak > 0) for (let i = 0; i < L; i++) res[i] *= 0.85 / peak;
+  const fade = 64; for (let i = 0; i < fade; i++) { res[i] *= i / fade; res[L - 1 - i] *= i / fade; }
+  return res;
+}
+
 // ================= FFT (radix-2, in place) =================
 const rev = new Uint32Array(NFFT); { const bits = Math.log2(NFFT); for (let i = 0; i < NFFT; i++) { let r = 0; for (let j = 0; j < bits; j++) r |= ((i >> j) & 1) << (bits - 1 - j); rev[i] = r; } }
 const cosT = new Float64Array(NFFT / 2), sinT = new Float64Array(NFFT / 2);
@@ -422,7 +1180,7 @@ function draw() {
       d[p] = R > 255 ? 255 : R; d[p + 1] = G > 255 ? 255 : G; d[p + 2] = B > 255 ? 255 : B; d[p + 3] = 255;
     } }
   ctx.putImageData(img, 0, 0);
-  if (window.__notesReady) drawOv();
+  if (window.__notesReady) { drawOv(); drawHelixBar(); }
 }
 function drawAxis() {
   const ax = $('axis'); ax.innerHTML = ''; const root = +$('root').value;
@@ -456,15 +1214,15 @@ function kick(c0, v) {
 }
 function snare(c0, v) {
   v = v != null ? v : loudV(); const n = Math.round(0.17 * SR / HOP);
-  for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(260)); r < NR; r++) put(noise, r, c0 + dc, (v * 0.93 - 0.6 * dc / n) * (0.85 + 0.15 * Math.random()));
+  for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(260)); r < NR; r++) put(noise, r, c0 + dc, (v * 0.93 - 0.6 * dc / n) * (0.85 + 0.15 * sRand()));
   for (let dc = 0; dc < 4; dc++) { put(tone, rowOfFreq(185), c0 + dc, v - 0.08 - 0.1 * dc); put(tone, rowOfFreq(330), c0 + dc, v - 0.2 - 0.12 * dc); }
 }
 function hat(c0, v, open, size) {
   v = v != null ? v : loudV(); const n = open ? Math.round(0.2 * SR / HOP) : 2 + Math.round((size != null ? size : +$('size').value) / 3);
-  for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(5500)); r < NR; r++) put(noise, r, c0 + dc, (v - 0.25 * dc / n) * (0.9 + 0.1 * Math.random()));
+  for (let dc = 0; dc < n; dc++) for (let r = Math.round(rowOfFreq(5500)); r < NR; r++) put(noise, r, c0 + dc, (v - 0.25 * dc / n) * (0.9 + 0.1 * sRand()));
 }
 function smear(rf, c) { const v = loudV() * 0.85, rad = +$('size').value * 2;
-  for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad / 2; dc <= rad / 2; dc++) { const q = (dr * dr) / (rad * rad) + (dc * dc * 4) / (rad * rad); if (q <= 1) put(noise, rf + dr, c + dc, v * (1 - 0.7 * q) * (0.7 + 0.3 * Math.random())); } }
+  for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad / 2; dc <= rad / 2; dc++) { const q = (dr * dr) / (rad * rad) + (dc * dc * 4) / (rad * rad); if (q <= 1) put(noise, rf + dr, c + dc, v * (1 - 0.7 * q) * (0.7 + 0.3 * sRand())); } }
 const qc = c => quant ? Math.round(c / stepCols()) * stepCols() : c;
 
 let drawing = false, last = null, strokeC0 = 0, lastStrike = -1e9;
@@ -542,7 +1300,7 @@ function renderClean(T, N, C, L) {
     const f = rowFreq(r); if (f > SR * 0.47) continue;
     let any = false; for (let c = 0; c < C; c++) if (T[r * C + c] > 0.001) { any = true; break; }
     if (!any) continue;
-    const w = 2 * Math.PI * f / SR; let ph = Math.random() * 2 * Math.PI;
+    const w = 2 * Math.PI * f / SR; let ph = sRand() * 2 * Math.PI;
     // the row's loudness, column by column, joined into one envelope at the sample rate and then smoothed:
     // a corner (a note starting, stopping, or a glide handing off between rows) used to splatter energy up the whole
     // spectrum and draw a stripe at every note change (found by LEGIBILITY-1). Two passes of a box ~11.6 ms wide.
@@ -561,7 +1319,7 @@ function renderClean(T, N, C, L) {
       for (let k = 0; k < NBIN; k++) {
         const rf = binRow[k]; let m = 0;
         if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, v = N[r0 * C + c] * (1 - t) + N[(r0 + 1) * C + c] * t; m = levelOf(v); }
-        const a = Math.random() * 2 * Math.PI; re[k] = m * Math.cos(a) * 28; im[k] = m * Math.sin(a) * 28; if (m) live = true;
+        const a = sRand() * 2 * Math.PI; re[k] = m * Math.cos(a) * 28; im[k] = m * Math.sin(a) * 28; if (m) live = true;
       }
       if (!live) continue;
       im[0] = 0; im[NFFT / 2] = 0;
@@ -590,7 +1348,7 @@ async function renderGhost(iters, onProgress, T, N, C, L) {
   const len = (C - 1) * HOP + NFFT, out = new Float32Array(len), norm = new Float32Array(len);
   for (let c = 0; c < C; c++) for (let i = 0; i < NFFT; i++) norm[c * HOP + i] += win[i] * win[i];
   const phRe = new Float32Array(C * NBIN), phIm = new Float32Array(C * NBIN);
-  for (let i = 0; i < phRe.length; i++) { const a = Math.random() * 2 * Math.PI; phRe[i] = Math.cos(a); phIm[i] = Math.sin(a); }
+  for (let i = 0; i < phRe.length; i++) { const a = sRand() * 2 * Math.PI; phRe[i] = Math.cos(a); phIm[i] = Math.sin(a); }
   const re = new Float64Array(NFFT), im = new Float64Array(NFFT);
   const istft = () => { out.fill(0);
     for (let c = 0; c < C; c++) {
@@ -624,7 +1382,9 @@ async function render() {
   rendering = (async () => {
     const t0 = performance.now();
     let s;
+    reseed(currentSeed);
     if (mode === 'clean') { await new Promise(r => setTimeout(r)); s = renderClean(); }
+    else if (mode === 'helix') { s = await renderHelix(12, (n, of) => { $('busy').textContent = '● weaving helix ' + n + '/' + of + '… '; }); }
     else s = await renderGhost(32, (n, of) => { $('busy').textContent = '● weaving ghost ' + n + '/' + of + '… '; });
     s = crunchIt(s); rendered = s; $('busy').style.display = 'none'; $('busy').textContent = '● weaving… ';
     lastRenderMs = performance.now() - t0;
@@ -651,7 +1411,7 @@ function audio() {
   setMix(); return actx;
 }
 function makeIR(a, dur) { const n = Math.round(a.sampleRate * dur), b = a.createBuffer(2, n, a.sampleRate);
-  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2) * (i < 300 ? i / 300 : 1); } return b; }
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (sRand() * 2 - 1) * Math.pow(1 - i / n, 3.2) * (i < 300 ? i / 300 : 1); } return b; }
 function setMix() { if (!actx) return; const v = +$('vol').value / 100, s = +$('space').value / 100;
   master.gain.value = v; dry.gain.value = 1 - 0.45 * s; wet.gain.value = 0.55 * s; }
 function startAt(samples, offset) {
@@ -668,7 +1428,8 @@ async function playRender() {                       // what to play: the loop, o
   if (slowCache && slowCache.base === base && slowCache.listen === listen) return slowCache.s;
   const C2 = Math.round(cols / listen), L2 = Math.round(loopLen() / listen), T2 = stretchArr(tone, cols, C2), N2 = stretchArr(noise, cols, C2);
   $('busy').style.display = 'inline';
-  let s = mode === 'clean' ? renderClean(T2, N2, C2, L2) : await renderGhost(24, (n, of) => { $('busy').textContent = '● weaving slow ghost ' + n + '/' + of + '… '; }, T2, N2, C2, L2);
+  reseed(currentSeed);
+  let s = mode === 'clean' ? renderClean(T2, N2, C2, L2) : (mode === 'helix' ? await renderHelix(10, (n, of) => { $('busy').textContent = '● weaving slow helix ' + n + '/' + of + '… '; }, T2, N2, C2, L2) : await renderGhost(24, (n, of) => { $('busy').textContent = '● weaving slow ghost ' + n + '/' + of + '… '; }, T2, N2, C2, L2));
   $('busy').style.display = 'none'; $('busy').textContent = '● weaving… ';
   s = crunchIt(s); slowCache = { base, listen, s }; return s;
 }
@@ -677,7 +1438,7 @@ async function play() {
   const s = await playRender(); if (!silentCheck(s)) { say('The loom is empty. Paint something first.'); return; }
   playing = true; startAt(s, 0); $('play').textContent = '■ Stop'; $('play').classList.add('live');
   $('head').style.display = 'block'; tick();
-  say((mode === 'clean' ? 'Clean' : 'Ghost') + ' · ' + (freeSecs ? secs.toFixed(1) + ' s (free length)' : bars + ' bar' + (bars > 1 ? 's' : '') + ' at ' + bpm + ' BPM') + (listen !== 1 ? ' · listening at ' + ({0.5: '½', 0.25: '¼', 0.125: '⅛'}[listen]) + ' speed, same pitch' : '') + ' · woven in ' + (lastRenderMs / 1000).toFixed(2) + ' s. Keep painting; changes play on the fly.');
+  say((mode === 'clean' ? 'Clean' : (mode === 'helix' ? 'Helix' : 'Ghost')) + ' · ' + (freeSecs ? secs.toFixed(1) + ' s (free length)' : bars + ' bar' + (bars > 1 ? 's' : '') + ' at ' + bpm + ' BPM') + (listen !== 1 ? ' · listening at ' + ({0.5: '½', 0.25: '¼', 0.125: '⅛'}[listen]) + ' speed, same pitch' : '') + ' · woven in ' + (lastRenderMs / 1000).toFixed(2) + ' s. Keep painting; changes play on the fly.');
 }
 function stop() { playing = false; if (srcNode) { try { srcNode.stop(); } catch (e) {} srcNode = null; } cancelAnimationFrame(raf); $('head').style.display = 'none'; $('play').textContent = '▶ Play'; $('play').classList.remove('live'); }
 function tick() { if (!playing) return; const t = ((actx.currentTime - t0) % loopDur) / loopDur; $('head').style.left = (t * 100) + '%'; raf = requestAnimationFrame(tick); }
@@ -731,7 +1492,7 @@ $('imgIn').onchange = e => { const file = e.target.files[0]; if (!file) return; 
 // The chunk is for tools; a model reading the tile only sees pixels. Filename fallback: _t12.3-13.1_f200-800
 const CRC_T = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC_T[n] = c >>> 0; }
 const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = CRC_T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
-function pngReadMeta(buf) { const u = new Uint8Array(buf), v = new DataView(buf); if (u.length < 16 || u[1] !== 0x50 || u[2] !== 0x4E) return null;
+function pngReadMeta(buf) { const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf), v = new DataView(u.buffer, u.byteOffset, u.byteLength); if (u.length < 16 || u[1] !== 0x50 || u[2] !== 0x4E) return null;
   for (let p = 8; p + 8 <= u.length;) { const len = v.getUint32(p), type = String.fromCharCode(u[p + 4], u[p + 5], u[p + 6], u[p + 7]);
     if (type === 'tEXt' || type === 'iTXt') { const d = u.subarray(p + 8, p + 8 + len), z = d.indexOf(0);
       if (z > 0 && String.fromCharCode(...d.subarray(0, z)) === 'auragraph') { let q = z + 1;
@@ -739,11 +1500,15 @@ function pngReadMeta(buf) { const u = new Uint8Array(buf), v = new DataView(buf)
         try { return JSON.parse(new TextDecoder().decode(d.subarray(q))); } catch (e) { return null; } } }
     if (type === 'IEND') break; p += 12 + len; }
   return null; }
-function pngWithMeta(u, meta) {                                   // insert the chunk just before IEND
-  const txt = 'auragraph\0' + JSON.stringify(meta).replace(/[\u0080-￿]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
-  const body = Uint8Array.from(txt, ch => ch.charCodeAt(0)), ch = new Uint8Array(12 + body.length), dv = new DataView(ch.buffer);
-  dv.setUint32(0, body.length); ch.set([116, 69, 88, 116], 4); ch.set(body, 8); dv.setUint32(8 + body.length, crc32(ch.subarray(4, 8 + body.length)));
-  const iend = u.length - 12, out = new Uint8Array(u.length + ch.length); out.set(u.subarray(0, iend)); out.set(ch, iend); out.set(u.subarray(iend), iend + ch.length); return out; }
+function pngWithMeta(u, meta, agLLBytes = null) {                 // insert auragraph tEXt and optional agLL chunk just before IEND
+  const txt = 'auragraph\0' + JSON.stringify(meta).replace(/[\u0080-\uffff]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
+  const cMeta = makePngChunk('tEXt', Uint8Array.from(txt, ch => ch.charCodeAt(0)));
+  const cLL = agLLBytes ? makePngChunk('agLL', agLLBytes) : new Uint8Array(0);
+  const iend = u.length - 12, out = new Uint8Array(u.length + cMeta.length + cLL.length);
+  out.set(u.subarray(0, iend), 0); out.set(cMeta, iend);
+  if (cLL.length) out.set(cLL, iend + cMeta.length);
+  out.set(u.subarray(iend), iend + cMeta.length + cLL.length);
+  return out; }
 function boundsFromName(name) { const m = {}, t = name.match(/_t(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/), f = name.match(/_f(\d+(?:\.\d+)?)(k?)-(\d+(?:\.\d+)?)(k?)/i);
   if (t) { m.t0 = +t[1]; m.t1 = +t[2]; } if (f) { m.f0 = +f[1] * (f[2] ? 1000 : 1); m.f1 = +f[3] * (f[4] ? 1000 : 1); } return m; }
 const lvlCache = new Map();
@@ -753,8 +1518,21 @@ function pixLevel(d, p) {                                           // magma col
   const key = (r << 16) | (g << 8) | b; let v = lvlCache.get(key);
   if (v === undefined) { let bd = 1e9, bi = 0; for (let i = 0; i < 256; i++) { const x = LUT[i * 3] - r, y = LUT[i * 3 + 1] - g, z = LUT[i * 3 + 2] - b, dd = x * x + y * y + z * z; if (dd < bd) { bd = dd; bi = i; } } v = bi / 255; lvlCache.set(key, v); }
   return v * a; }
-function tileMeta() { const F = frame(), m = { format: 'auragraph-tile', v: '0.3', t0: +F.t0.toFixed(4), t1: +F.t1.toFixed(4), f0: +F.f0.toFixed(3), f1: +F.f1.toFixed(3), axis: 'log', bands: AG_NB, db: [-DBR, 0], cmap: 'magma8', src: 'AuraLoom' };
-  if (notes.length) m.notes = notes; return m; }
+function tileMeta(opts = {}) {
+  const F = frame(), useH = opts.helix != null ? !!opts.helix : ($('helixOn') ? $('helixOn').checked : false);
+  const useL = !opts.stripSidecar && !!importedSidecar;
+  if (!useH && !useL) {
+    const m = { format: 'auragraph-tile', v: '0.3', t0: +F.t0.toFixed(4), t1: +F.t1.toFixed(4), f0: +F.f0.toFixed(3), f1: +F.f1.toFixed(3), axis: 'log', bands: AG_NB, db: [-DBR, 0], cmap: 'magma8', src: 'AuraLoom' };
+    if (notes.length) m.notes = notes;
+    return m;
+  }
+  const hx = useH ? buildLoomHelix(tone, noise, cols) : null;
+  const m = { format: 'auragraph-tile', v: '0.4', t0: +F.t0.toFixed(4), t1: +F.t1.toFixed(4), f0: +F.f0.toFixed(3), f1: +F.f1.toFixed(3), axis: 'log', bands: AG_NB, helixRows: useH ? HELIX_DATA_ROWS : 0, db: [-DBR, 0], cmap: 'magma8', sr: SR, hop: HOP, seed: hx ? hx.seed : currentSeed, src: 'AuraLoom v0.5' };
+  if (useH && hx) m.helix = hx;
+  if (useL && restoredSidecar) m.lossless = { chunk: 'agLL', v: importedSidecar[4], channels: restoredSidecar.channels, bits: 16, rate: restoredSidecar.rate, samples: restoredSidecar.frames, fnv1a: restoredSidecar.expectedHash.toString(16).padStart(8, '0'), bytes: importedSidecar.length };
+  if (notes.length) m.notes = notes;
+  return m;
+}
 const fmtHz = f => f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 1 : 2) + ' kHz' : Math.round(f) + ' Hz';
 
 // ================= pinned notes (seed 10) and the C6·d3 grid (seed 10a) =================
@@ -824,32 +1602,66 @@ $('notesCopy').onclick = () => { const t = notesText(); (navigator.clipboard ? n
 $('notesClear').onclick = () => { if (!notes.length) return; window.__lastNotes = notes; notes = []; renderNotes(); drawOv(); say('Notes cleared.'); };
 try { const by = localStorage.getItem('auraloom.by'); if (by) $('noteBy').value = by; } catch (e) {}
 window.__notesReady = true; renderNotes();
+function updateSidecarControls() {
+  const bRest = $('restoreOrig'), bExp = $('exportOrigWav'), bNoLL = $('saveTileNoSidecar'), badge = $('llBadge');
+  if (!bRest) return;
+  if (restoredSidecar) {
+    bRest.disabled = false; bExp.disabled = false; bNoLL.style.display = 'inline-flex';
+    badge.style.display = 'inline-block';
+    badge.className = 'll-badge ' + (restoredSidecar.exact ? 'ok' : 'err');
+    badge.textContent = (restoredSidecar.exact ? '✓ ' : '✗ ') + 'FNV-1a ' + restoredSidecar.actualHash.toString(16).padStart(8, '0');
+  } else {
+    bRest.disabled = true; bExp.disabled = true; bNoLL.style.display = 'none';
+    badge.style.display = 'none';
+  }
+}
+
 $('tileIn').onchange = async e => { const file = e.target.files[0]; if (!file) return; e.target.value = '';
   let buf; try { buf = await file.arrayBuffer(); } catch (err) { say('Could not read that file.'); return; }
   const chunk = pngReadMeta(buf), B = { ...boundsFromName(file.name), ...(chunk || {}) };
+  const llBytes = pngReadSidecar(buf);
+  importedSidecar = llBytes; restoredSidecar = null;
+  if (llBytes) {
+    try { restoredSidecar = decodeLossless(llBytes); } catch (err) { restoredSidecar = { exact: false, actualHash: 0, err: err.message }; }
+  }
+  updateSidecarControls();
   readImage(file, im => { const W = im.naturalWidth, H = im.naturalHeight;
+    const hRows = B.helixRows != null ? B.helixRows : (H > AG_NB && B.helix ? H - AG_NB : 0);
+    const specH = Math.max(1, H - hRows);
     const f0 = B.f0 > 0 ? B.f0 : AG_FMIN, f1 = B.f1 > f0 ? B.f1 : AG_FMAX, hasT = B.t1 > B.t0, hasF = B.f0 > 0 && B.f1 > B.f0;
     stop(); pushUndo();
     const dur = hasT ? B.t1 - B.t0 : 0;
     if (hasT) { layout(bpm, bars, 'new', Math.min(120, Math.max(0.5, dur))); showLen(); }
     frameK = 1; tileB = (hasT || hasF) ? { t0: hasT ? B.t0 : 0, f0, f1 } : null; notes = Array.isArray(B.notes) ? B.notes : []; renderNotes();
     const d = pixelsOf(im, W, H), srcDbr = Array.isArray(B.db) ? B.db[1] - B.db[0] : DBR, lg = Math.log(f1 / f0);
+    importedHelix = B.helix || null;
+    if (B.seed) reseed(B.seed);
+    // Store native 160-band levels for exact Helix playback
+    const nativeLev = new Float32Array(AG_NB * W);
+    for (let b = 0; b < AG_NB; b++) {
+      const sy = hRows + Math.min(specH - 1, Math.max(0, Math.round((AG_NB - 1 - b) / Math.max(1, AG_NB - 1) * (specH - 1))));
+      for (let x = 0; x < W; x++) nativeLev[b * W + x] = pixLevel(d, (sy * W + x) * 4);
+    }
+    importedTileA = { lev: nativeLev, F: W, range: srcDbr };
     tone.fill(0); noise.fill(0);
     for (let c = 0; c < cols; c++) {
       const x = hasT ? (c + 0.5) * HOP / SR / dur * W - 0.5 : (c + 0.5) / cols * W - 0.5; if (x < -0.5 || x > W - 0.5) continue;
       const x0 = Math.max(0, Math.min(W - 1, Math.floor(x))), x1 = Math.min(W - 1, x0 + 1), tx = Math.max(0, Math.min(1, x - x0));
       for (let r = 0; r < NR; r++) { const f = rowFreq(r); if (f < f0 || f > f1) continue;
-        const yb = Math.log(f / f0) / lg * H - 0.5, b0 = Math.max(0, Math.min(H - 1, Math.floor(yb))), b1 = Math.min(H - 1, b0 + 1), ty = Math.max(0, Math.min(1, yb - b0));
-        const at = (xx, bb) => pixLevel(d, ((H - 1 - bb) * W + xx) * 4);
+        const yb = Math.log(f / f0) / lg * specH - 0.5, b0 = Math.max(0, Math.min(specH - 1, Math.floor(yb))), b1 = Math.min(specH - 1, b0 + 1), ty = Math.max(0, Math.min(1, yb - b0));
+        const at = (xx, bb) => pixLevel(d, ((hRows + specH - 1 - bb) * W + xx) * 4);
         let v = (at(x0, b0) * (1 - tx) + at(x1, b0) * tx) * (1 - ty) + (at(x0, b1) * (1 - tx) + at(x1, b1) * tx) * ty;
-        if (srcDbr !== DBR) v = Math.max(0, 1 + (v - 1) * srcDbr / DBR);         // same loudness, our 60 dB range
+        if (srcDbr !== DBR) v = Math.max(0, 1 + (v - 1) * srcDbr / DBR);
         tone[r * cols + c] = v; } }
-    evlog = []; baseLines = []; imported = true; markStale(); setMode('ghost'); draw(); touched();
+    evlog = []; baseLines = []; imported = true; markStale();
+    setMode(importedHelix ? 'helix' : 'ghost');
+    draw(); touched();
     const from = chunk ? 'its AuraGraph data' : 'its filename';
     drawOv(); const nn = notes.length ? ' ' + notes.length + ' pinned note' + (notes.length > 1 ? 's' : '') + ' came with it.' : '';
-    if (hasT || hasF) say('Clip woven in on its real axes (from ' + from + '): ' + (hasT ? B.t0.toFixed(2) + '–' + B.t1.toFixed(2) + ' s, ' : '') + fmtHz(f0) + '–' + fmtHz(f1) + '. Outside that range the loom is silent.' + (hasT && dur < 0.5 ? ' It is shorter than the 0.5 s minimum loop, so the rest is quiet.' : '') + ' Try Stretch ×4 and ▶ to hear it slowly.' + nn);
-    else if (H !== AG_NB) say('No bounds in this picture (no AuraGraph data, no _t…_f… in the name), so it is spread over the full 30 Hz–11 kHz. A clip needs its bounds to land on the right notes.');
-    else say('AuraGraph tile woven in on its real pitch axis. Crop off the axes first if it has them. ▶ to hear it.');
+    const llMsg = restoredSidecar ? (' Lossless sidecar ' + (restoredSidecar.exact ? '✓ verified' : '✗ hash mismatch') + ' (use ▶ Restore original or ⤓ Export original WAV).') : '';
+    if (hasT || hasF) say('Clip woven in on its real axes (from ' + from + '): ' + (hasT ? B.t0.toFixed(2) + '–' + B.t1.toFixed(2) + ' s, ' : '') + fmtHz(f0) + '–' + fmtHz(f1) + '.' + (importedHelix ? ' Helix mode is on.' : ' No helix data; Ghost mode is on.') + llMsg + nn);
+    else if (specH !== AG_NB) say('No bounds in this picture (no AuraGraph data, no _t…_f… in the name), so it is spread over the full 30 Hz–11 kHz.');
+    else say('AuraGraph tile woven in on its real pitch axis. ▶ to hear it.' + llMsg);
   }); };
 $('playOrig').onclick = async () => { if (!origBuffer) return; await audio().resume(); stop(); const n = actx.createBufferSource(), b = actx.createBuffer(1, origBuffer.length, SR); b.copyToChannel(origBuffer, 0); n.buffer = b; n.connect(master); n.start(); say('Playing the original recording.'); };
 
@@ -878,16 +1690,29 @@ async function loopWav(seamless) {
 $('saveWav').onclick = async () => { const b = await loopWav(false); if (!b) { say('Nothing to save yet.'); return; } download(b, 'auraloom-' + stamp() + '.wav'); say('WAV saved: one pass of the loop, with the Space tail ringing out at the end.'); };
 $('saveLoop').onclick = async () => { const b = await loopWav(true); if (!b) { say('Nothing to save yet.'); return; } download(b, 'auraloom-loop-' + stamp() + '.wav'); say('Loop-ready WAV saved: exactly one loop long, with the reverb tail already folded over the start, so it repeats with no seam in any player or editor.'); };
 $('savePng').onclick = () => cv.toBlob(b => download(b, 'auraloom-' + stamp() + '.png'));
-function tileCanvas() {
-  const oc = document.createElement('canvas'); oc.width = cols; oc.height = AG_NB; const o = oc.getContext('2d'), im = o.createImageData(cols, AG_NB), d = im.data;
-  const F = frame();                                   // the tile covers the frame, so a clip exports as a clip and its grid stays put
-  for (let b = 0; b < AG_NB; b++) { const f = F.f0 * Math.pow(F.f1 / F.f0, (b + 0.5) / AG_NB), rf = rowOfFreq(f), y = AG_NB - 1 - b;
+function tileCanvas(opts = {}) {
+  const useH = opts.helix != null ? !!opts.helix : ($('helixOn') ? $('helixOn').checked : false);
+  const hRows = useH ? HELIX_DATA_ROWS : 0, H = hRows + AG_NB;
+  const oc = document.createElement('canvas'); oc.width = cols; oc.height = H; const o = oc.getContext('2d'), im = o.createImageData(cols, H), d = im.data;
+  if (useH) {
+    const hx = buildLoomHelix(tone, noise, cols);
+    drawHelixStripRGBA(d, cols, 0, 0, cols, hRows, cols, c => {
+      let maxLv = 0, bestR = 48;
+      for (let r = 0; r < NR; r++) { const v = Math.max(tone[r * cols + c], noise[r * cols + c] * 0.7); if (v > maxLv) { maxLv = v; bestR = r; } }
+      return { maxLv, f0: maxLv > 0.15 ? rowFreq(bestR) : 0 };
+    }, hx);
+  }
+  const F = frame();
+  for (let b = 0; b < AG_NB; b++) { const f = F.f0 * Math.pow(F.f1 / F.f0, (b + 0.5) / AG_NB), rf = rowOfFreq(f), y = hRows + (AG_NB - 1 - b);
     for (let c = 0; c < cols; c++) { let v = 0;
       if (rf >= 0 && rf < NR - 1) { const r0 = Math.floor(rf), t = rf - r0, i0 = r0 * cols + c; v = Math.max(tone[i0], noise[i0]) * (1 - t) + Math.max(tone[i0 + cols], noise[i0 + cols]) * t; }
       const k = Math.max(0, Math.min(255, Math.round(v * 255))) * 3, p = (y * cols + c) * 4; d[p] = LUT[k]; d[p + 1] = LUT[k + 1]; d[p + 2] = LUT[k + 2]; d[p + 3] = 255; } }
   o.putImageData(im, 0, 0); return oc;
 }
-const tileBytes = () => pngWithMeta(unb64(tileCanvas().toDataURL('image/png').split(',')[1]), tileMeta());
+const tileBytes = (opts = {}) => {
+  const ll = (!opts.stripSidecar && importedSidecar) ? importedSidecar : null;
+  return pngWithMeta(unb64(tileCanvas(opts).toDataURL('image/png').split(',')[1]), tileMeta(opts), ll);
+};
 $('saveTile').onclick = () => { download(new Blob([tileBytes()], { type: 'image/png' }), 'auraloom-tile-' + stamp() + '_t' + frame().t0.toFixed(2) + '-' + frame().t1.toFixed(2) + '_f' + Math.round(frame().f0) + '-' + Math.round(frame().f1) + '.aura.png'); say('AuraGraph-format tile saved (160 bands, 30 Hz–11 kHz, time left to right). Paint-a-Tile and AuraLoom can both read it back.');
 };
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -907,8 +1732,59 @@ $('projIn').onchange = async e => { const file = e.target.files[0]; if (!file) r
   } catch (err) { say('Could not load that project: ' + err.message); } };
 
 // ================= controls =================
-function setMode(m) { mode = m; $('mode').textContent = m === 'clean' ? 'Clean' : 'Ghost'; $('mode').classList.toggle('on', m === 'ghost'); touched(); say(m === 'clean' ? 'Clean: every tone thread is a steady, in-tune oscillator.' : 'Ghost: the picture is rebuilt by Griffin-Lim, the way AuraGraph tiles play back. Slower to weave, hauntier to hear.'); }
-$('mode').onclick = () => setMode(mode === 'clean' ? 'ghost' : 'clean');
+function setMode(m) {
+  if (m === 'helix' && imported && (!importedHelix || !Array.isArray(importedHelix.events) || !importedHelix.events.length)) {
+    mode = 'ghost';
+    say('This tile has no timing helix data; falling back to Ghost (Griffin-Lim).');
+  } else {
+    mode = m;
+    say(m === 'clean' ? 'Clean: every tone thread is a steady, in-tune oscillator.' : (m === 'helix' ? 'Helix: phase-faithful playback aligned to the timing helix pulse marks and transients.' : 'Ghost: the picture is rebuilt by Griffin-Lim, the way plain AuraGraph tiles play back.'));
+  }
+  $('mode').textContent = mode === 'clean' ? 'Clean' : (mode === 'helix' ? 'Helix' : 'Ghost');
+  $('mode').classList.toggle('on', mode !== 'clean');
+  if ($('modeHelix')) $('modeHelix').classList.toggle('on', mode === 'helix');
+  if ($('modeGhost')) $('modeGhost').classList.toggle('on', mode === 'ghost');
+  touched();
+}
+$('mode').onclick = () => setMode(mode === 'clean' ? 'helix' : (mode === 'helix' ? 'ghost' : 'clean'));
+if ($('modeHelix')) $('modeHelix').onclick = () => setMode('helix');
+if ($('modeGhost')) $('modeGhost').onclick = () => setMode('ghost');
+if ($('helixOn')) $('helixOn').onchange = () => drawHelixBar();
+if ($('saveTileNoSidecar')) $('saveTileNoSidecar').onclick = () => {
+  download(new Blob([tileBytes({ stripSidecar: true })], { type: 'image/png' }), 'auraloom-tile-' + stamp() + '_t' + frame().t0.toFixed(2) + '-' + frame().t1.toFixed(2) + '_f' + Math.round(frame().f0) + '-' + Math.round(frame().f1) + '.aura.png');
+  say('AuraGraph tile saved without its lossless sidecar.');
+};
+if ($('restoreOrig')) $('restoreOrig').onclick = async () => {
+  if (!restoredSidecar || !restoredSidecar.pcmInt16) return;
+  await audio().resume(); stop();
+  const { pcmInt16, rate, channels, frames, exact, actualHash } = restoredSidecar;
+  const b = actx.createBuffer(channels, frames, rate);
+  for (let ch = 0; ch < channels; ch++) {
+    const d = b.getChannelData(ch);
+    for (let i = 0; i < frames; i++) d[i] = pcmInt16[i * channels + ch] / 32768;
+  }
+  const n = actx.createBufferSource(); n.buffer = b; n.connect(master); n.start(); srcNode = n;
+  say((exact ? '✓ Playing bit-exact restored original' : '✗ Hash mismatch') + ' (' + frames + ' samples @ ' + rate + ' Hz, ' + channels + 'ch, FNV-1a ' + actualHash.toString(16).padStart(8, '0') + ').');
+};
+if ($('exportOrigWav')) $('exportOrigWav').onclick = () => {
+  if (!restoredSidecar || !restoredSidecar.pcmInt16) return;
+  const { pcmInt16, rate, channels, frames, exact, actualHash } = restoredSidecar;
+  const chs = Array.from({ length: channels }, (_, ch) => {
+    const f32 = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) f32[i] = pcmInt16[i * channels + ch] / 32767;
+    return f32;
+  });
+  // Write exact 16-bit integer PCM into WAV buffer
+  const dataLen = frames * channels * 2, buf = new ArrayBuffer(44 + dataLen), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + dataLen, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, channels, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2 * channels, true);
+  v.setUint16(32, 2 * channels, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, dataLen, true);
+  for (let i = 0; i < frames * channels; i++) v.setInt16(44 + i * 2, pcmInt16[i], true);
+  download(new Blob([buf], { type: 'audio/wav' }), 'auraloom-restored-' + stamp() + '.wav');
+  say((exact ? '✓ ' : '✗ ') + 'Exported bit-exact original WAV (' + frames + ' samples, FNV-1a ' + actualHash.toString(16).padStart(8, '0') + ').');
+};
 $('play').onclick = () => playing ? stop() : play();
 document.querySelectorAll('[data-brush]').forEach(b => b.onclick = () => selectBrush(b.dataset.brush));
 function selectBrush(name) { brush = name; document.querySelectorAll('[data-brush]').forEach(x => x.classList.toggle('on', x.dataset.brush === name)); if (window.__notesReady) drawOv(); }
@@ -1112,7 +1988,7 @@ function weaveScore(text) {
           stampNote(rowOfMidi(m), c0 + dc, v, dc * HOP / SR + (ev.opts.age != null ? +ev.opts.age : 0), voice); }
       } else if (ev.thread === 'noise') {
         const centre = notes ? rowOfMidi(notes[0]) : rowOfMidi(84), w = ev.opts.width != null ? +ev.opts.width : 4, L = Math.max(1, Math.round((len || 2) * sc));
-        for (let dc = 0; dc < L; dc++) for (let dr = -w; dr <= w; dr++) put(noise, centre + dr, c0 + dc, (v - 0.3 * Math.abs(dr) / Math.max(1, w)) * (0.75 + 0.25 * Math.random()));
+        for (let dc = 0; dc < L; dc++) for (let dr = -w; dr <= w; dr++) put(noise, centre + dr, c0 + dc, (v - 0.3 * Math.abs(dr) / Math.max(1, w)) * (0.75 + 0.25 * sRand()));
       }
       woven++;
     }
@@ -1192,7 +2068,13 @@ layout(104, 2, 'new');
 })();
 // exports the headless renderer (tools/weave.py) calls
 async function wavB64(seamless) { const blob = await loopWav(!!seamless); const u = new Uint8Array(await blob.arrayBuffer()); let b = ''; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); }
-window.__loom = { addNote, get notes() { return notes; }, frame, pointRef, notesText, get tileB() { return tileB; }, get frameK() { return frameK; }, playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tilePng: () => 'data:image/png;base64,' + b64(tileBytes()), pngReadMeta, loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; } };
+window.__loom = { addNote, get notes() { return notes; }, frame, pointRef, notesText, get tileB() { return tileB; }, get frameK() { return frameK; }, playRender, setListen: v => { listen = v; }, writeScore, get evlog() { return evlog; }, weaveScore, wavB64, tileBytes, tilePng: (opts) => 'data:image/png;base64,' + b64(tileBytes(opts)), pngReadMeta, pngReadSidecar, encodeLossless, decodeLossless, fnv1a32, buildLoomHelix, loomPng: () => cv.toDataURL('image/png'), EXAMPLE, GUIDE, get tone() { return tone; }, get noise() { return noise; }, get cols() { return cols; }, NR, SR, HOP, rowFreq, rowOfMidi, renderClean, renderGhost, renderHelix, render, setMode, stampNote, pluck, kick, layout, get mode() { return mode; },
+  restoreFromTileBytes: (buf) => {
+    const meta = pngReadMeta(buf), ll = pngReadSidecar(buf);
+    if (!ll) return { meta, restored: null };
+    return { meta, restored: decodeLossless(ll) };
+  }
+};
 </script>
 </body>
 </html>
